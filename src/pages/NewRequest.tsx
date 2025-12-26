@@ -2040,15 +2040,15 @@ const filteredItems = useMemo(() => {
         const statusInfo = lineStatusInfo(line);
         const statusTooltip = statusInfo?.tooltip || statusKey;
         const StatusIcon = statusInfo?.Icon;
-        const statusWrapper = statusInfo?.wrapper || 'inline-flex items-center text-gray-500';
+        const statusWrapper = statusInfo?.wrapperClass || 'inline-flex items-center text-gray-500';
         const statusColorClass =
-          (statusInfo?.wrapper?.split(' ').find(c => c.startsWith('text-'))) ||
+          (statusWrapper.split(' ').find(c => c.startsWith('text-'))) ||
           (statusKey === 'OWNER_APPROVED' ? 'text-green-600'
             : statusKey === 'PENDING_OWNER' ? 'text-amber-500'
             : statusKey === 'OWNER_REJECTED' ? 'text-red-600'
             : statusKey === 'DELETED' ? 'text-red-500'
             : 'text-gray-500');
-        const statusIconCls = `${statusInfo?.icon || 'h-4 w-4'} ${statusColorClass}`;
+        const statusIconCls = `${statusInfo?.iconClass || 'h-4 w-4'} ${statusColorClass}`;
         const ownerUpper = String(line.ownerDeptId || '').toUpperCase();
         const ownerStatusKey = String(line.status || '').toUpperCase();
         const lineStatusKey = normalizeLineStatus(line);
