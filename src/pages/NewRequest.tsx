@@ -1495,7 +1495,11 @@ const derived = deriveLifecycleStatus(lines);
  const onSubmitClick = async () => {
   if (!canPersistRequest) return;
   if (dirty || !requestId) await save('DRAFT', { redirect: false });
-  await save('SUBMITTED', { redirect: true });
+  await save('SUBMITTED', { redirect: false });
+  const code = rqRef.current || requestId;
+  if (!existingRqParam && code) {
+   nav(`/requests/new?rq=${code}`, { replace: true });
+  }
  };
 
  // Add-row combobox state

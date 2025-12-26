@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { fetchVisibleRequests } from '../lib/firestoreQueries';
 import type { RequestDoc, DeptId, ItemDoc } from '../lib/types';
-import { doc, getFirestore, serverTimestamp, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getFirestore,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  type QueryConstraint,
+} from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { useCollectionIndex } from '../lib/useCollectionIndex';
 import { getFromDept, getLineDeptIds, resolveEngineerName, resolveProjectName, summarizeLines } from '../lib/requestPresentation';
@@ -41,6 +52,30 @@ function normalizeDeptLabel(value: any) {
     .replace(/\s*\/\s*/g, DEPT_SEP)
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeDeptInputs(ids: DeptId[]): string[] {
+  const set = new Set<string>();
+  ids.forEach(id => {
+    const val = String(id || '').trim();
+    if (!val) return;
+    set.add(val);
+  });
+  return Array.from(set);
+}
+
+function tsValue(v: any): number {
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const parsed = Date.parse(v);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (typeof v.toMillis === 'function') return v.toMillis();
+  if (typeof v.seconds === 'number') {
+    return (v.seconds * 1000) + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  return 0;
 }
 
 export default function Requests() {
@@ -118,7 +153,6 @@ export default function Requests() {
   const dateRef = useRef<HTMLDivElement>(null);
   const [params] = useSearchParams();
   const [showMobileFilter, setShowMobileFilter] = useState(false);
-  const [sheetExpanded, setSheetExpanded] = useState(false);
   const [showPager, setShowPager] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
@@ -161,7 +195,82 @@ export default function Requests() {
       ? <span className="sort-pill">{sortDir === 'asc' ? '\u25B2' : '\u25BC'}</span>
       : null
   );
-  useEffect(()=>{ (async()=>{ setLoading(true); try { setRows(await fetchVisibleRequests(myDepts, { storeOfficer, inStoreDept, isAdmin, isDeptManager, isRequester }, 500, user?.uid || undefined)); } finally { setLoading(false); } })(); }, [storeOfficer, inStoreDept, isAdmin, isDeptManager, isRequester, myDepts.join(','), user?.uid]);
+  useEffect(() => {
+    setLoading(true);
+    const base = collection(db, 'requests');
+    const perQueryLimit = 500;
+    const normalizedDepts = normalizeDeptInputs(myDepts);
+    const queries: { constraints: QueryConstraint[]; ordered: boolean }[] = [];
+
+    if (isAdmin || inStoreDept) {
+      queries.push({ constraints: [], ordered: true });
+    } else {
+      const canSeeDeptMembership = isAdmin || inStoreDept || storeOfficer || isDeptManager || isRequester;
+      if (normalizedDepts.length && canSeeDeptMembership) {
+        const membershipFields = ['deptIndex','lineDeptIds','departmentsInvolved','visibleDepts'] as const;
+        membershipFields.forEach(field => {
+          normalizedDepts.forEach(value => {
+            queries.push({ constraints: [where(field, 'array-contains', value)], ordered: false });
+          });
+        });
+      }
+      if (viewerUid) {
+        queries.push({ constraints: [where('createdBy.uid','==', viewerUid)], ordered: false });
+      }
+    }
+
+    if (!queries.length) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
+    const loaded = new Set<number>();
+    const perQuery = new Map<number, Map<string, RequestDoc>>();
+    const updateRows = () => {
+      const merged = new Map<string, RequestDoc>();
+      perQuery.forEach(map => {
+        map.forEach((val, key) => merged.set(key, val));
+      });
+      const sorted = Array.from(merged.values()).sort((a,b) => tsValue(b.updatedAt) - tsValue(a.updatedAt));
+      setRows(sorted.slice(0, perQueryLimit));
+    };
+
+    const unsubs = queries.map((plan, idx) => {
+      const q = plan.ordered
+        ? query(base, ...plan.constraints, orderBy('updatedAt','desc'), limit(perQueryLimit))
+        : query(base, ...plan.constraints);
+
+      return onSnapshot(q, snap => {
+        const map = new Map<string, RequestDoc>();
+        snap.docs.forEach(docSnap => {
+          map.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as any) } as RequestDoc);
+        });
+        perQuery.set(idx, map);
+        if (!active) return;
+        updateRows();
+        if (!loaded.has(idx)) {
+          loaded.add(idx);
+          if (loaded.size >= queries.length) setLoading(false);
+        }
+      }, err => {
+        const code = (err as any)?.code;
+        if (code !== 'permission-denied') {
+          console.warn('requests subscription failed', err);
+        }
+        if (!loaded.has(idx)) {
+          loaded.add(idx);
+          if (loaded.size >= queries.length) setLoading(false);
+        }
+      });
+    });
+
+    return () => {
+      active = false;
+      unsubs.forEach(unsub => unsub());
+    };
+  }, [db, storeOfficer, inStoreDept, isAdmin, isDeptManager, isRequester, myDepts.join(','), viewerUid]);
 
   // Persist filters
   useEffect(()=>{
@@ -190,8 +299,8 @@ export default function Requests() {
   },[]);
 
   // Mobile filter toggle via AppShell event
-  const openMobileFilter = useCallback(() => { setSheetExpanded(false); setShowMobileFilter(true); }, []);
-  const closeMobileFilter = useCallback(() => { setShowMobileFilter(false); setSheetExpanded(false); }, []);
+  const openMobileFilter = useCallback(() => { setShowMobileFilter(true); }, []);
+  const closeMobileFilter = useCallback(() => { setShowMobileFilter(false); }, []);
 
   useEffect(() => {
     const handler = () => openMobileFilter();
@@ -777,20 +886,13 @@ const allColumns: { key:string, label:string }[] = [
       {showMobileFilter && (
         <div className="sm:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={closeMobileFilter}>
           <div
-            className={`bg-white rounded-t-3xl shadow-xl max-h-[100vh] ${sheetExpanded ? 'h-[100vh]' : 'h-[75vh]'} flex flex-col w-screen`}
+            className="bg-white rounded-t-3xl shadow-xl max-h-[100vh] h-[75vh] flex flex-col w-screen"
             onClick={(e)=>e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <div className="text-base font-semibold">FILTER</div>
               <div className="flex items-center gap-2">
-                <button
-                  className="btn-ghost text-xl"
-                  onClick={()=>setSheetExpanded(prev => !prev)}
-                  aria-label={sheetExpanded ? 'Collapse' : 'Expand'}
-                >
-                  {sheetExpanded ? 'v' : '^'}
-                </button>
-                <button className="btn-ghost" onClick={closeMobileFilter}>X</button>
+                <button className="btn-ghost" onClick={closeMobileFilter}>Done</button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
