@@ -252,7 +252,7 @@ export default function Inventory() {
               const n = i+1; const cls = n===page? 'inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-600 text-white' : 'inline-flex items-center justify-center h-8 w-8 rounded-full text-blue-700 hover:bg-blue-50';
               return <button key={n} className={cls} onClick={()=>setPage(n)}>{n}</button>;
             })}
-            {pageCount>10 && <span className="px-2">â€¦ {pageCount}</span>}
+            {pageCount>10 && <span className="px-2">... {pageCount}</span>}
             <button className="btn-ghost" onClick={()=>setPage(p=>Math.min(pageCount,p+1))}>Next &gt;</button>
           </div>
         </div>

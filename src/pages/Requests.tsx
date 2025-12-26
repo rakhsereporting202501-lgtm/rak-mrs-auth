@@ -269,7 +269,7 @@ function matchRow(r: any): boolean {
       nav(`/requests/new?rq=${r.id}`);
     } catch (err) {
       console.error('openRequestRow failed', err);
-      setRowError('???? ??? ?????. ???? ?? ????? ???????? ?? ??? ????????.');
+      setRowError('Could not open this request. Please try again.');
       setRowLoadingId(null);
     }
   }
@@ -530,7 +530,7 @@ const allColumns: { key:string, label:string }[] = [
               const n = i+1; const cls = n===page? badgeActive : badge;
               return <button key={n} className={cls} onClick={()=>setPage(n)}>{n}</button>;
             })}
-            {pageCount>10 && <span className="px-2">… {pageCount}</span>}
+            {pageCount>10 && <span className="px-2">... {pageCount}</span>}
             <button className="btn-ghost" onClick={()=>setPage(p=>Math.min(pageCount,p+1))}>Next &gt;</button>
           </div>
         </div>
@@ -748,7 +748,7 @@ const allColumns: { key:string, label:string }[] = [
       {rowError && (
         <div className="alert alert-error">
           <span>{rowError}</span>
-          <button className="ml-auto text-sm font-semibold underline" onClick={()=>setRowError(null)}>?????</button>
+          <button className="ml-auto text-sm font-semibold underline" onClick={()=>setRowError(null)}>Dismiss</button>
         </div>
       )}
 
@@ -766,7 +766,7 @@ const allColumns: { key:string, label:string }[] = [
                   : 'px-3 py-2 rounded-lg text-sm border border-gray-200 text-gray-800';
                 return <button key={n} className={cls} onClick={()=>setPage(n)}>{n}</button>;
               })}
-              {pageCount > 10 && <span className="px-2 text-sm text-gray-600">… {pageCount}</span>}
+              {pageCount > 10 && <span className="px-2 text-sm text-gray-600">... {pageCount}</span>}
             </div>
             <button className="btn-ghost" onClick={()=>setPage(p=>Math.min(pageCount,p+1))}>Next &gt;</button>
           </div>
@@ -788,9 +788,9 @@ const allColumns: { key:string, label:string }[] = [
                   onClick={()=>setSheetExpanded(prev => !prev)}
                   aria-label={sheetExpanded ? 'Collapse' : 'Expand'}
                 >
-                  {sheetExpanded ? '▾' : '▴'}
+                  {sheetExpanded ? 'v' : '^'}
                 </button>
-                <button className="btn-ghost" onClick={closeMobileFilter}>✕</button>
+                <button className="btn-ghost" onClick={closeMobileFilter}>X</button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
@@ -915,7 +915,7 @@ const allColumns: { key:string, label:string }[] = [
         onClick={()=>window.scrollTo({ top: 0, behavior: 'smooth' })}
         aria-label="Scroll to top"
       >
-        ↑
+        Up
       </button>
     )}
     {copyToast && (

@@ -11,7 +11,7 @@ export default function RequestDetails(){
     if(!id) return;
     try{ const snap = await getDoc(doc(db,'requests', id)); setData(snap.data()); } finally { setLoading(false); }
   })() }, [id]);
-  if(loading) return <div className="card p-6">Loading…</div>;
+  if(loading) return <div className="card p-6">Loading...</div>;
   if(!data) return <div className="card p-6">Not found</div>;
   return (
     <div className="space-y-3">

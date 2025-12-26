@@ -115,8 +115,8 @@ const STATUS_COLOR_MAP: Record<string, string> = {
 };
 const ACTIVITY_LOG_LIMIT = 50;
 const REVISION_CONFLICT_CODE = 'revision/conflict';
-const REVISION_CONFLICT_MESSAGE = 'Ù‡Ù†Ø§Ùƒ ØªØ­Ø¯ÙŠØ« Ø¬Ø¯ÙŠØ¯ØŒ Ø­Ø¯Ù‘Ø« Ø§Ù„ØµÙØ­Ø© Ø£ÙˆÙ„Ø§Ù‹';
-const REVISION_HELPER = 'Ø­Ø¯Ø« ØªØ¹Ø¯ÙŠÙ„ Ø¹Ù„Ù‰ Ø§Ù„Ø-Ù„Ø¨ Ù…Ù† Ù…Ø³ØªØ®Ø¯Ù… Ø¢Ø®Ø±. Ø­Ø¯Ù‘Ø« Ø§Ù„ØµÙØ­Ø© Ù‚Ø¨Ù„ Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ø­ÙØ¸.';
+const REVISION_CONFLICT_MESSAGE = 'New update detected. Refresh the page first.';
+const REVISION_HELPER = 'Another user updated this request. Refresh the page before saving again.';
 
 const toRevisionNumber = (value?: any): number => (
  typeof value === 'number' && Number.isFinite(value) ? value : 0
@@ -321,7 +321,7 @@ export default function NewRequest() {
  const [dirty, setDirty] = useState(false);
  const [showLeave, setShowLeave] = useState(false);
  const revisionRef = useRef<number>(0);
-  const [infoOpen, setInfoOpen] = useState(true);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [itemsOpen, setItemsOpen] = useState(true);
   const [showProjectSheet, setShowProjectSheet] = useState(false);
   const [showEngineerSheet, setShowEngineerSheet] = useState(false);
@@ -1878,34 +1878,36 @@ const filteredItems = useMemo(() => {
   setItemDetailOpen(true);
  };
  const closeItemDetail = () => setItemDetailOpen(false);
-  const changeItemDetailUnit = (unit: string) => {
-    if (!itemDetailLine || readOnlyLines) return;
-    setItemDetailUnit(unit);
-    setLines(prev => prev.map(l => l.key === itemDetailLine.key ? { ...l, unit } : l));
-    setDirty(true);
-  };
-  const changeItemDetailQty = (qty: number) => {
-    if (!itemDetailLine || readOnlyLines) return;
-    setItemDetailQty(qty);
-    setLines(prev => prev.map(l => l.key === itemDetailLine.key ? { ...l, qty } : l));
-    setDirty(true);
-  };
-  const adjustWheelQty = (delta: number) => {
+ const changeItemDetailUnit = (unit: string) => {
+  if (!itemDetailLine || readOnlyLines) return;
+  setItemDetailUnit(unit);
+  if (unit === itemDetailLine.unit) return;
+  setLines(prev => prev.map(l => l.key === itemDetailLine.key ? dropLineApproval({ ...l, unit }) : l));
+  setDirty(true);
+ };
+ const changeItemDetailQty = (qty: number) => {
+  if (!itemDetailLine || readOnlyLines) return;
+  setItemDetailQty(qty);
+  if (qty === itemDetailLine.qty) return;
+  setLines(prev => prev.map(l => l.key === itemDetailLine.key ? dropLineApproval({ ...l, qty }) : l));
+  setDirty(true);
+ };
+ const adjustWheelQty = (delta: number) => {
     setItemDetailQty(prev => {
       const next = Math.min(999, Math.max(0, prev + delta));
       changeItemDetailQty(next);
       return next;
     });
   };
-  const onWheelQty = (e: React.WheelEvent<HTMLDivElement>) => {
+ const onWheelQty = (e: React.WheelEvent<HTMLDivElement>) => {
     if (e.cancelable) e.preventDefault();
     e.stopPropagation();
     adjustWheelQty(e.deltaY > 0 ? 1 : -1);
   };
-  const onTouchStartQty = (e: React.TouchEvent<HTMLDivElement>) => {
+ const onTouchStartQty = (e: React.TouchEvent<HTMLDivElement>) => {
     touchStartRef.current = e.touches[0].clientY;
   };
-  const onTouchMoveQty = (e: React.TouchEvent<HTMLDivElement>) => {
+ const onTouchMoveQty = (e: React.TouchEvent<HTMLDivElement>) => {
     if (touchStartRef.current === null) return;
     const delta = touchStartRef.current - e.touches[0].clientY;
     if (Math.abs(delta) > 12) {
@@ -1913,7 +1915,7 @@ const filteredItems = useMemo(() => {
       touchStartRef.current = e.touches[0].clientY;
     }
   };
-  const onTouchEndQty = () => {
+ const onTouchEndQty = () => {
     touchStartRef.current = null;
   };
 
@@ -2231,7 +2233,7 @@ const filteredItems = useMemo(() => {
               {historyOpen && (
                 <div className="max-h-[320px] overflow-y-auto">
                   {activityLoading ? (
-                    <div className="px-4 py-6 text-sm text-gray-500">Loading…</div>
+                    <div className="px-4 py-6 text-sm text-gray-500">Loading...</div>
                   ) : activityEntries.length === 0 ? (
                     <div className="px-4 py-6 text-sm text-gray-500">No history yet.</div>
                   ) : (
@@ -2801,7 +2803,7 @@ const filteredItems = useMemo(() => {
       {historyOpen && (
        <div className="max-h-[320px] overflow-y-auto">
         {activityLoading ? (
-         <div className="px-4 py-6 text-sm text-gray-500">Loadingâ€¦</div>
+         <div className="px-4 py-6 text-sm text-gray-500">Loading...</div>
         ) : activityEntries.length === 0 ? (
          <div className="px-4 py-6 text-sm text-gray-500">No history yet.</div>
         ) : (
@@ -3062,9 +3064,9 @@ const filteredItems = useMemo(() => {
             )}
           </div>
           <div className="grid grid-cols-3 gap-2">
-            {['1','2','3','4','5','6','7','8','9','C','0','⌫'].map(key => {
+            {['1','2','3','4','5','6','7','8','9','C','0','BS'].map(key => {
               const isClear = key === 'C';
-              const isBack = key === '⌫';
+              const isBack = key === 'BS';
               return (
                 <button
                   key={key}

@@ -131,7 +131,7 @@ export default function AdminSeedUsers() {
   const runSeed = async () => {
     if (busy) return;
     setBusy(true);
-    setStatus('Running seed…');
+    setStatus('Running seed...');
     try {
       const flagRef = doc(db, 'meta', 'users_seed_v1');
       const flagSnap = await getDoc(flagRef);
@@ -183,10 +183,10 @@ export default function AdminSeedUsers() {
     <div className="card p-4 space-y-3">
       <div className="font-semibold">Admin User Seed</div>
       <p className="text-sm text-gray-600">
-        هذا الإجراء مخصّص للإدارة فقط ويجب تشغيله مرة واحدة ثم حذف الصفحة.
+        Admin-only utility. Run once, then remove this page.
       </p>
       <button className="btn-primary" disabled={busy} onClick={runSeed}>
-        {busy ? 'Seeding…' : 'Run User Seed'}
+        {busy ? 'Seeding...' : 'Run User Seed'}
       </button>
       {status && <div className="text-sm">{status}</div>}
     </div>

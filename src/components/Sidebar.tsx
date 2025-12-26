@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boolean; onClose: () => void; collapsedDesktop?: boolean; }) {
   const { role } = useAuth();
   const side = 'left-0';
+  const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
   const canRequest = !!role?.roles?.requester; // requester only
   const canInventory = !!role?.roles?.storeOfficer; // storeOfficer only
   const canReporting = !!role?.roles?.auditor; // auditor only
@@ -36,7 +37,7 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
       <aside className={`fixed ${side} top-0 z-50 h-full w-full sm:w-72 bg-white border ${open? '' : 'translate-x-[-100%]'} ${collapsedDesktop ? 'sm:-translate-x-full' : 'sm:translate-x-0'} transition-transform`}>
         <div className="p-4 flex items-center justify-between gap-2 border-b">
           <Link to={homeHref} onClick={onClose} className="flex items-center gap-2">
-            <img src="/logo.svg" className="h-6 w-6"/>
+            <img src={logoSrc} className="h-6 w-6" alt="Logo" />
             <div className="font-semibold">RAK IMS</div>
           </Link>
           <button className="sm:hidden btn-ghost px-3 py-1 text-sm" onClick={onClose}>Back</button>

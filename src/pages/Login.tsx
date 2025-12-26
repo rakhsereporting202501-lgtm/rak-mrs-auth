@@ -15,6 +15,7 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const nav = useNavigate();
   const { user } = useAuth();
+  const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
 
   useEffect(() => { if (user) nav('/'); }, [user]);
 
@@ -29,7 +30,7 @@ export default function Login() {
     try {
       let emailToUse = id;
       if (!isEmail(id)) {
-        // resolve username → email
+        // resolve username to email
         const db = getFirestore();
         const uname = id.toLowerCase();
         const snap = await getDoc(doc(db, 'usernames', uname));
@@ -59,14 +60,14 @@ export default function Login() {
     <div className="min-h-[calc(100vh-3.5rem)] flex items-center justify-center p-4">
       <div className="card w-full max-w-md p-6">
         <div className="flex items-center gap-3 mb-4">
-          <img src="/logo.svg" alt="logo" className="h-8 w-8"/>
+          <img src={logoSrc} alt="Logo" className="h-8 w-8"/>
           <h1 className="text-2xl font-semibold">RAK Inventory Management System</h1>
         </div>
         <p className="text-sm text-gray-600 mb-4">Sign-in only. Ask admin to provision your account.</p>
         <form onSubmit={onSubmit} className="space-y-3">
           <input className="input" autoFocus type="text" placeholder="Email or Username" value={identifier} onChange={e=>setIdentifier(e.target.value)} />
           <input className="input" type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} />
-          <button type="submit" disabled={busy} className="btn-primary w-full">{busy ? '…' : 'Sign in'}</button>
+          <button type="submit" disabled={busy} className="btn-primary w-full">{busy ? 'Signing in...' : 'Sign in'}</button>
         </form>
         {err && <p className="text-red-600 text-sm mt-3">{err}</p>}
       </div>

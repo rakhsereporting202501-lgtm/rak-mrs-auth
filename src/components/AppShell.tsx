@@ -10,6 +10,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isRequestsPage = useMemo(() => loc.pathname === '/requests', [loc.pathname]);
   const isNewRequestPage = useMemo(() => loc.pathname.startsWith('/requests/new'), [loc.pathname]);
   const isAr = false;
+  const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
   return (
     <div className="min-h-screen bg-white flex">
       <Sidebar open={open} onClose={() => setOpen(false)} collapsedDesktop={collapsed} />
@@ -17,7 +18,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Desktop top bar for menu toggle */}
         <div className="hidden sm:flex items-center justify-between px-4 py-3 border-b bg-white sticky top-0 z-30">
           <div className="flex items-center gap-2">
-            <img src="/logo.svg" className="h-7 w-7" alt="Logo" />
+            <img src={logoSrc} className="h-7 w-7" alt="Logo" />
             <div className="text-base font-semibold">RAK IMS</div>
           </div>
           <button
@@ -35,12 +36,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               {isNewRequestPage ? (
                 <Link to="/requests" className="flex items-center gap-2">
                   <ChevronLeft className="h-5 w-5 icon-blue" />
-                  <img src="/logo.svg" className="h-7 w-7" alt="Logo" />
+                  <img src={logoSrc} className="h-7 w-7" alt="Logo" />
                   <div className="text-base font-semibold">RAK IMS</div>
                 </Link>
               ) : (
                 <>
-                  <img src="/logo.svg" className="h-7 w-7" alt="Logo" />
+                  <img src={logoSrc} className="h-7 w-7" alt="Logo" />
                   <div className="text-base font-semibold">RAK IMS</div>
                 </>
               )}
