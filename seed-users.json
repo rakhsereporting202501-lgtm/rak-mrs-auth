@@ -1,0 +1,216 @@
+{
+  "__collections__": {
+    "usernames": {
+      "ali.majed": {
+        "uid": "xNEznJJ65TU4EBpXfaRKC3L9dZG2",
+        "email": "ali.majed@rak.com",
+        "fullName": "Ali Majed"
+      },
+      "hussain.abdulkareem": {
+        "uid": "ted6NJZynMdQFKTZqpsWZJ0uW9S2",
+        "email": "hussain.abdulkareem@rak.com",
+        "fullName": "Hussain Abdul Kareem"
+      },
+      "hasanin.adil": {
+        "uid": "wiBMUGFzB3OFLJcqwE38zKpaqOr1",
+        "email": "hasanin.adil@rak.com",
+        "fullName": "Hasanin Adil"
+      },
+      "mohammed.adnan": {
+        "uid": "zUOXvNDfeHSqFO5bSYAgiECqZ342",
+        "email": "mohammed.adnan@rak.com",
+        "fullName": "Mohammed Adnan"
+      },
+      "abdulsamad.hadi": {
+        "uid": "ozpFoLSq7JRfZZrXlO7m6Mm7LHn1",
+        "email": "abdulsamad.hadi@rak.com",
+        "fullName": "Abdul Samad Hadi"
+      },
+      "ahmed.jehad": {
+        "uid": "T6cxpyT4dqedMHe6LQ6mz0MJZLo2",
+        "email": "ahmed.jehad@rak.com",
+        "fullName": "Ahmed Jehad"
+      },
+      "jaffer.akeel": {
+        "uid": "qlZZ6TGs6BOCU611BQf7IZ1xPoh2",
+        "email": "jaffer.akeel@rak.com",
+        "fullName": "Jaffer Akeel"
+      },
+      "ghanam.khalel": {
+        "uid": "LW9vjYJfQOWaiwPrvGB57a4aHbj2",
+        "email": "ghanam.khalel@rak.com",
+        "fullName": "Ghanam Khalel"
+      },
+      "pipline.storeofficer": {
+        "uid": "H4fLRhUnoGQ7h5tWLTYmp5he9Qr2",
+        "email": "pipline.storeofficer@rak.com",
+        "fullName": "Store Officer"
+      },
+      "nasser.saadallah": {
+        "uid": "S0IUmB4tQ7OS4QIKL59xyNoOs1G2",
+        "email": "nasser.saadallah@rak.com",
+        "fullName": "Nasser SaadAllah"
+      },
+      "ammer.aouad": {
+        "uid": "7i7yg7pNjZbihO4DcrGC0R2NU2R2",
+        "email": "ammer.aouad@rak.com",
+        "fullName": "Ammer Aouad"
+      },
+      "nashwan.faisal": {
+        "uid": "Kt2oaPXGlhNGWyGifG4ngGAWPEO2",
+        "email": "nashwan.faisal@rak.com",
+        "fullName": "Nashwan Faisal"
+      },
+      "ei.storeofficer": {
+        "uid": "ypUphfNw01Wk6g0UAxn3jcBwEMs1",
+        "email": "ei.storeofficer@rak.com",
+        "fullName": "Store Officer"
+      }
+    },
+    "roles": {
+      "xNEznJJ65TU4EBpXfaRKC3L9dZG2": {
+        "fullName": "Ali Majed",
+        "email": "ali.majed@rak.com",
+        "departmentIds": ["VRP", "TRP"],
+        "roles": {
+          "admin": false,
+          "deptManager": false,
+          "requester": false,
+          "storeOfficer": true
+        }
+      },
+      "ted6NJZynMdQFKTZqpsWZJ0uW9S2": {
+        "fullName": "Hussain Abdul Kareem",
+        "email": "hussain.abdulkareem@rak.com",
+        "departmentIds": ["VRP"],
+        "roles": {
+          "admin": false,
+          "deptManager": false,
+          "requester": true,
+          "storeOfficer": false
+        }
+      },
+      "wiBMUGFzB3OFLJcqwE38zKpaqOr1": {
+        "fullName": "Hasanin Adil",
+        "email": "hasanin.adil@rak.com",
+        "departmentIds": ["VRP"],
+        "roles": {
+          "admin": false,
+          "deptManager": false,
+          "requester": true,
+          "storeOfficer": true
+        }
+      },
+      "zUOXvNDfeHSqFO5bSYAgiECqZ342": {
+        "fullName": "Mohammed Adnan",
+        "email": "mohammed.adnan@rak.com",
+        "departmentIds": ["TRP"],
+        "roles": {
+          "admin": false,
+          "deptManager": false,
+          "requester": true,
+          "storeOfficer": false
+        }
+      },
+      "ozpFoLSq7JRfZZrXlO7m6Mm7LHn1": {
+        "fullName": "Abdul Samad Hadi",
+        "email": "abdulsamad.hadi@rak.com",
+        "departmentIds": ["TRP"],
+        "roles": {
+          "admin": false,
+          "deptManager": false,
+          "requester": true,
+          "storeOfficer": true
+        }
+      },
+      "T6cxpyT4dqedMHe6LQ6mz0MJZLo2": {
+        "fullName": "Ahmed Jehad",
+        "email": "ahmed.jehad@rak.com",
+        "departmentIds": ["PIPLINE PROJECT", "PIPLINE OPS"],
+        "roles": {
+          "admin": false,
+          "deptManager": true,
+          "requester": true,
+          "storeOfficer": true
+        }
+      },
+      "qlZZ6TGs6BOCU611BQf7IZ1xPoh2": {
+        "fullName": "Jaffer Akeel",
+        "email": "jaffer.akeel@rak.com",
+        "departmentIds": ["PIPLINE PROJECT", "PIPLINE OPS"],
+        "roles": {
+          "admin": false,
+          "deptManager": true,
+          "requester": true,
+          "storeOfficer": true
+        }
+      },
+      "LW9vjYJfQOWaiwPrvGB57a4aHbj2": {
+        "fullName": "Ghanam Khalel",
+        "email": "ghanam.khalel@rak.com",
+        "departmentIds": ["CPS", "LEAK", "MAINTENACE"],
+        "roles": {
+          "admin": false,
+          "deptManager": true,
+          "requester": true,
+          "storeOfficer": true
+        }
+      },
+      "H4fLRhUnoGQ7h5tWLTYmp5he9Qr2": {
+        "fullName": "Store Officer",
+        "email": "pipline.storeofficer@rak.com",
+        "departmentIds": ["PIPLINE PROJECT", "PIPLINE OPS", "CPS", "LEAK", "MAINTENACE"],
+        "roles": {
+          "admin": false,
+          "deptManager": false,
+          "requester": false,
+          "storeOfficer": true
+        }
+      },
+      "S0IUmB4tQ7OS4QIKL59xyNoOs1G2": {
+        "fullName": "Nasser SaadAllah",
+        "email": "nasser.saadallah@rak.com",
+        "departmentIds": [],
+        "roles": {
+          "admin": false,
+          "deptManager": false,
+          "requester": true,
+          "storeOfficer": false
+        }
+      },
+      "7i7yg7pNjZbihO4DcrGC0R2NU2R2": {
+        "fullName": "Ammer Aouad",
+        "email": "ammer.aouad@rak.com",
+        "departmentIds": ["EI"],
+        "roles": {
+          "admin": false,
+          "deptManager": true,
+          "requester": true,
+          "storeOfficer": true
+        }
+      },
+      "Kt2oaPXGlhNGWyGifG4ngGAWPEO2": {
+        "fullName": "Nashwan Faisal",
+        "email": "nashwan.faisal@rak.com",
+        "departmentIds": ["EI"],
+        "roles": {
+          "admin": false,
+          "deptManager": false,
+          "requester": true,
+          "storeOfficer": false
+        }
+      },
+      "ypUphfNw01Wk6g0UAxn3jcBwEMs1": {
+        "fullName": "Store Officer",
+        "email": "ei.storeofficer@rak.com",
+        "departmentIds": ["EI"],
+        "roles": {
+          "admin": false,
+          "deptManager": false,
+          "requester": false,
+          "storeOfficer": true
+        }
+      }
+    }
+  }
+}

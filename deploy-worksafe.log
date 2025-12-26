@@ -1,0 +1,32 @@
+
+[1m[37m===[39m Deploying to 'rak-worksafe'...[22m
+
+[36m[1mi [22m[39m deploying [1mfirestore[22m
+[36m[1mi  firestore:[22m[39m ensuring required API [1mfirestore.googleapis.com[22m is enabled...
+[36m[1mi  firestore:[22m[39m ensuring required API [1mfirestore.googleapis.com[22m is enabled...
+[36m[1mi [22m[39m [1m[36mfirestore:[39m[22m reading indexes from [1mfirestore.indexes.json[22m...
+[36m[1mi  cloud.firestore:[22m[39m checking [1mfirestore.rules[22m for compilation errors...
+[33m[1m! [22m[39m [W] 25:14 - Unused function: isAuditor.
+[33m[1m! [22m[39m [W] 40:14 - Unused function: inAnyUserDept.
+[33m[1m! [22m[39m [W] 121:14 - Unused function: approvalFieldsOnly.
+[33m[1m! [22m[39m [W] 122:14 - Invalid variable name: request.
+[33m[1m! [22m[39m [W] 122:41 - Invalid variable name: resource.
+[33m[1m! [22m[39m [W] 153:14 - Unused function: linesUnchangedOnParent.
+[33m[1m! [22m[39m [W] 154:15 - Invalid variable name: request.
+[33m[1m! [22m[39m [W] 155:12 - Invalid variable name: request.
+[33m[1m! [22m[39m [W] 155:43 - Invalid variable name: resource.
+[33m[1m! [22m[39m [W] 158:14 - Unused function: parentAllowedKeysChangedOnly.
+[33m[1m! [22m[39m [W] 159:21 - Invalid variable name: request.
+[33m[1m! [22m[39m [W] 159:48 - Invalid variable name: resource.
+[33m[1m! [22m[39m [W] 171:14 - Unused function: resourceLineDeptIds.
+[33m[1m! [22m[39m [W] 171:60 - Invalid variable name: resource.
+[33m[1m! [22m[39m [W] 194:14 - Unused function: statusIncoming.
+[33m[1m! [22m[39m [W] 195:14 - Invalid variable name: request.
+[33m[1m! [22m[39m [W] 196:11 - Invalid variable name: request.
+[32m[1m+  cloud.firestore:[22m[39m rules file [1mfirestore.rules[22m compiled successfully
+[36m[1mi  firestore:[22m[39m uploading rules [1mfirestore.rules[22m...
+[32m[1m+  firestore:[22m[39m released rules [1mfirestore.rules[22m to [1mcloud.firestore[22m
+
+[32m[1m+ [22m[39m [1m[4mDeploy complete![24m[22m
+
+[1mProject Console:[22m https://console.firebase.google.com/project/rak-worksafe/overview

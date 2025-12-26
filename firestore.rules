@@ -1,0 +1,657 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    /* ===== Helpers: Auth & Roles ===== */
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function roleDoc() {
+      return signedIn()
+        ? (
+            exists(/databases/$(db)/documents/roles/$(request.auth.uid))
+              ? get(/databases/$(db)/documents/roles/$(request.auth.uid))
+              : null
+          )
+        : null;
+    }
+
+    function hasRole(name) {
+      return roleDoc() != null
+        && roleDoc().data.roles != null
+        && roleDoc().data.roles[name] == true;
+    }
+
+    function isAdmin()        { return hasRole('admin'); }
+    function isDeptManager()  { return hasRole('deptManager'); }
+    function isRequester()    { return hasRole('requester'); }
+    function isStoreOfficer() { return hasRole('storeOfficer'); }
+
+    function userDeptIds() {
+      return roleDoc() != null && roleDoc().data.departmentIds != null
+        ? roleDoc().data.departmentIds
+        : [];
+    }
+
+    function inUserDepts(dept) {
+      return dept != null && userDeptIds().hasAny([dept]);
+    }
+
+    function isStoreDeptUser() {
+      return inUserDepts('Store');
+    }
+
+    function arrayHasValue(arr, value) {
+      return arr != null && arr.size() > 0 && value != null && arr.hasAny([value]);
+    }
+
+    function arrayIntersectsUser(arr) {
+      return arr != null && arr.size() > 0 && arr.hasAny(userDeptIds());
+    }
+
+    /* ===== Helpers: Request document structure ===== */
+
+    function docFromDept(doc) {
+      return doc == null
+        ? null
+        : (
+            doc.createdBy != null && doc.createdBy.departmentId != null
+              ? doc.createdBy.departmentId
+              : doc.fromDept
+          );
+    }
+
+    function docLineDeptIds(doc) {
+      return doc == null
+        ? []
+        : (
+            doc.lineDeptIds != null && doc.lineDeptIds.size() > 0
+              ? doc.lineDeptIds
+              : (
+                  doc.departmentsInvolved != null && doc.departmentsInvolved.size() > 0
+                    ? doc.departmentsInvolved
+                    : (
+                        doc.visibleDepts != null && doc.visibleDepts.size() > 0
+                          ? doc.visibleDepts
+                          : []
+                      )
+                )
+          );
+    }
+
+    function docDeptIndex(doc) {
+      let ids =
+        doc == null
+          ? []
+          : (
+              doc.deptIndex != null && doc.deptIndex.size() > 0
+                ? doc.deptIndex
+                : docLineDeptIds(doc)
+            );
+      let origin = docFromDept(doc);
+
+      return origin != null && !arrayHasValue(ids, origin)
+        ? ids.concat([origin])
+        : ids;
+    }
+
+    function docOwnerUid(doc) {
+      return doc != null && doc.createdBy != null && doc.createdBy.uid != null
+        ? doc.createdBy.uid
+        : null;
+    }
+
+    function docOwnerDeptId(doc) {
+      return doc != null && doc.createdBy != null
+        ? doc.createdBy.departmentId
+        : null;
+    }
+
+    function resourceOwnedByAuth() {
+      return request.auth != null && docOwnerUid(resource.data) == request.auth.uid;
+    }
+
+    function fromDeptMatchesCreator(doc) {
+      return doc != null
+        && doc.fromDept != null
+        && docOwnerDeptId(doc) != null
+        && doc.fromDept == docOwnerDeptId(doc);
+    }
+
+    function fromDeptUnchanged() {
+      return request.resource.data.keys().hasAny(['fromDept'])
+        ? request.resource.data.fromDept == resource.data.fromDept
+        : true;
+    }
+
+    function lineOwnerInUser(line) {
+      return line != null
+        && line.ownerDeptId != null
+        && inUserDepts(line.ownerDeptId);
+    }
+
+    function submitRank(s) {
+      return s == 'SUBMITTED'
+        ? 1
+        : (s == 'PARTIALLY_APPROVED'
+            ? 2
+            : (s == 'FULLY_APPROVED' ? 3 : 0));
+    }
+
+    function resourceFromDept() {
+      return docFromDept(resource.data);
+    }
+
+    function requestFromDept() {
+      return request.resource.data.keys().hasAny(['createdBy','fromDept'])
+        ? docFromDept(request.resource.data)
+        : resourceFromDept();
+    }
+
+    function resourceLineDeptIds() {
+      return docLineDeptIds(resource.data);
+    }
+
+    function requestLineDeptIds() {
+      return request.resource.data.keys().hasAny(['lineDeptIds','departmentsInvolved','visibleDepts'])
+        ? docLineDeptIds(request.resource.data)
+        : resourceLineDeptIds();
+    }
+
+    function resourceDeptIndex() {
+      return docDeptIndex(resource.data);
+    }
+
+    function requestDeptIndex() {
+      return request.resource.data.keys().hasAny(['deptIndex','lineDeptIds','departmentsInvolved','visibleDepts','createdBy','fromDept'])
+        ? docDeptIndex(request.resource.data)
+        : resourceDeptIndex();
+    }
+
+    function deptManagerScopeExisting() {
+      return isDeptManager()
+        && (
+             inUserDepts(resourceFromDept())
+             || arrayIntersectsUser(resourceDeptIndex())
+           );
+    }
+
+    function deptManagerScopeIncoming() {
+      return isDeptManager()
+        && (
+             inUserDepts(requestFromDept())
+             || arrayIntersectsUser(requestDeptIndex())
+           );
+    }
+
+    function deptManagerScopeEither() {
+      return deptManagerScopeExisting() || deptManagerScopeIncoming();
+    }
+
+    function incomingStatusTarget() {
+      return request.resource.data.keys().hasAny(['status'])
+        ? request.resource.data.status
+        : statusFrom();
+    }
+
+    function storeInventoryCheckRequired() {
+      return incomingStatusTarget() in [
+        'STORE_PREPARING',
+        'READY'
+      ];
+    }
+
+    function itemStockOk(itemId, qty) {
+      let itemDoc = get(/databases/$(db)/documents/items/$(itemId));
+      return !itemDoc.exists()
+        || itemDoc.data.qty == null
+        || qty <= itemDoc.data.qty;
+    }
+
+    function lineQtyWithinInventory(line) {
+      let trivialOk =
+        line == null
+        || line.deleted == true
+        || line.itemId == null
+        || line.qty == null
+        || line.qty <= 0;
+      let rejected =
+        line != null
+        && line.status != null
+        && line.status == 'OWNER_REJECTED';
+      return trivialOk
+        ? true
+        : (
+             rejected
+               ? true
+               : itemStockOk(line.itemId, line.qty)
+           );
+    }
+
+    function lineAt(lines, idx) {
+      return lines != null && lines.size() > idx ? lines[idx] : null;
+    }
+
+    function linesInventoryOk(lines) {
+      return lines == null
+        || lines.size() == 0
+        || (
+             lines.size() <= 10
+             && lineQtyWithinInventory(lineAt(lines, 0))
+             && lineQtyWithinInventory(lineAt(lines, 1))
+             && lineQtyWithinInventory(lineAt(lines, 2))
+             && lineQtyWithinInventory(lineAt(lines, 3))
+             && lineQtyWithinInventory(lineAt(lines, 4))
+             && lineQtyWithinInventory(lineAt(lines, 5))
+             && lineQtyWithinInventory(lineAt(lines, 6))
+             && lineQtyWithinInventory(lineAt(lines, 7))
+             && lineQtyWithinInventory(lineAt(lines, 8))
+             && lineQtyWithinInventory(lineAt(lines, 9))
+           );
+    }
+
+    function requestInventoryOk() {
+      return !storeInventoryCheckRequired()
+        || linesInventoryOk(
+             request.resource.data.keys().hasAny(['lines'])
+               ? request.resource.data.lines
+               : resource.data.lines
+           );
+    }
+
+    /* ===== Helpers: status & updates ===== */
+
+    function readReceiptUpdate() {
+      return signedIn()
+        && request.resource.data
+             .diff(resource.data)
+             .affectedKeys()
+             .hasOnly(['readBy']);
+    }
+
+    function createdByUnchanged() {
+      return request.resource.data.keys().hasAny(['createdBy'])
+        ? (
+            resource.data.createdBy != null
+            && request.resource.data.createdBy != null
+            && request.resource.data.createdBy.uid == resource.data.createdBy.uid
+            && request.resource.data.createdBy.departmentId
+               == resource.data.createdBy.departmentId
+          )
+        : true;
+    }
+
+    function statusFrom() {
+      return resource.data.status;
+    }
+
+    function statusTo() {
+      return request.resource.data.status;
+    }
+
+    function statusIncoming() {
+      return request.resource.data.keys().hasAny(['status'])
+        ? request.resource.data.status
+        : statusFrom();
+    }
+
+    function editableStage(s) {
+      return s in ['DRAFT','SUBMITTED','PARTIALLY_APPROVED','FULLY_APPROVED'];
+    }
+
+    function inSubmitWindow(s) {
+      return s in [
+        'SUBMITTED',
+        'PARTIALLY_APPROVED',
+        'FULLY_APPROVED',
+        'STORE_PREPARING'
+      ];
+    }
+
+    function requestCreatorDeptPresent() {
+      let creator = request.resource.data.createdBy;
+      return creator != null && creator.departmentId != null;
+    }
+
+    /* ==== Header-only updates (project / engineer / urgent / note فقط) ==== */
+
+    function headerOnlyUpdateForOwnerOrDeptManager() {
+      let diff = request.resource.data.diff(resource.data);
+      return editableStage(statusFrom())
+        && statusIncoming() == statusFrom()
+        && diff.changedKeys().hasOnly(['projectId','engineerId','urgent','note','notes','updatedAt','activityLog'])
+        && diff.addedKeys().hasOnly(['projectId','engineerId','urgent','note','notes','updatedAt','activityLog'])
+        && diff.removedKeys().size() == 0
+        && (
+             (isRequester() && resourceOwnedByAuth())
+             || deptManagerHasRequestAccess()
+           );
+    }
+
+    function managerHasLineAccess() {
+      return arrayIntersectsUser(resourceDeptIndex())
+        || arrayIntersectsUser(requestDeptIndex());
+    }
+
+    function deptManagerHasRequestAccess() {
+      return isDeptManager()
+        && (
+             inUserDepts(resourceFromDept())
+             || managerHasLineAccess()
+           );
+    }
+
+    function headerOrLineUpdateAllowed() {
+      let diff = request.resource.data.diff(resource.data);
+      let allowedKeys = [
+        'projectId',
+        'engineerId',
+        'urgent',
+        'note',
+        'notes',
+        'lines',
+        'lineDeptIds',
+        'deptIndex',
+        'autoApprovedByDept',
+        'status',
+        'stage',
+        'canceledAt',
+        'canceledBy',
+        'updatedAt',
+        'activityLog'
+      ];
+
+      return diff.changedKeys().hasOnly(allowedKeys)
+        && diff.addedKeys().hasOnly(allowedKeys)
+        && diff.removedKeys().hasOnly(['canceledAt','canceledBy'])
+        && (
+             (isRequester() && resourceOwnedByAuth())
+             || deptManagerHasRequestAccess()
+           );
+    }
+
+    function cancelUpdateAllowed() {
+      return statusFrom() in [
+        'SUBMITTED',
+        'PARTIALLY_APPROVED',
+        'FULLY_APPROVED',
+        'STORE_PREPARING'
+      ]
+        && statusTo() == 'CANCELED'
+        && request.resource.data.stage == 'CANCELED'
+        && (
+             (isRequester() && resourceOwnedByAuth())
+             || deptManagerHasRequestAccess()
+           );
+    }
+
+    /* ===== Sub-lines owner approval (داخل /requests/{reqId}/items/{itemId}) ===== */
+
+    function ownerApprovalOnly() {
+      return request.resource.data
+        .diff(resource.data)
+        .changedKeys()
+        .hasOnly(['status','ownerApprovedBy','ownerRejectedBy']);
+    }
+
+    /* ===== Public/Meta ===== */
+
+    match /usernames/{uname} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /roles/{uid} {
+      allow read: if signedIn() && uid == request.auth.uid;
+      allow create: if isAdmin()
+        || (
+             signedIn()
+             && uid == request.auth.uid
+             && !exists(/databases/$(db)/documents/roles/$(uid))
+           );
+      allow update, delete: if isAdmin();
+    }
+
+    match /projects/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /engineers/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    /* Items (master list) */
+    match /items/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin() || isStoreOfficer();
+    }
+
+    /* RQ counters */
+    match /counters/{key} {
+      allow read: if signedIn();
+      allow write: if isAdmin() || isRequester() || isDeptManager();
+    }
+
+    match /meta/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    /* ===== Requests ===== */
+    match /requests/{reqId} {
+
+      /* Create */
+      allow create: if signedIn()
+        && (
+             isAdmin()
+             || (
+                  (isRequester() || isDeptManager())
+                  && request.resource.data.createdBy.uid == request.auth.uid
+                )
+           )
+        && requestCreatorDeptPresent()
+        && fromDeptMatchesCreator(request.resource.data);
+
+      /* Read */
+      allow read: if isAdmin()
+        || isStoreDeptUser()
+        || isStoreOfficer()
+        || inUserDepts(resourceFromDept())
+        || arrayIntersectsUser(resourceDeptIndex())
+        || resource.data.createdBy.uid == request.auth.uid;
+
+      /* Update */
+      allow update:
+        // 1) تحديث readBy فقط
+        if readReceiptUpdate()
+
+        // 2-4) إدمن / requester / deptManager
+        || (
+             isAdmin()
+          || headerOnlyUpdateForOwnerOrDeptManager()
+          || headerOrLineUpdateAllowed()
+          || cancelUpdateAllowed()
+          || (
+               signedIn()
+               && (isRequester() || isDeptManager())
+               && createdByUnchanged()
+               && fromDeptUnchanged()
+               && (
+                    // DRAFT → DRAFT
+                    (statusFrom() == 'DRAFT' && statusTo() == 'DRAFT'
+                      && (
+                           (isRequester() && resourceOwnedByAuth())
+                           || deptManagerHasRequestAccess()
+                         )
+                   )
+
+                    // DRAFT → SUBMITTED
+                 || (statusFrom() == 'DRAFT' && statusTo() == 'SUBMITTED'
+                      && (
+                           (isRequester() && resourceOwnedByAuth())
+                           || deptManagerHasRequestAccess()
+                         )
+                    )
+
+                    // Dept Manager auto-approval: mixed → PARTIALLY_APPROVED
+                 || (isDeptManager()
+                      && inUserDepts(resourceFromDept())
+                      && statusFrom() == 'DRAFT'
+                      && statusTo() == 'PARTIALLY_APPROVED'
+                      && request.resource.data.stage == 'PARTIALLY_APPROVED'
+                      && requestLineDeptIds().size() >= 2
+                      && request.resource.data.autoApprovedByDept != null
+                      && request.resource.data.autoApprovedByDept[resourceFromDept()] == true
+                    )
+
+                    // Dept Manager auto-approval: single dept → FULLY_APPROVED
+                 || (isDeptManager()
+                      && inUserDepts(resourceFromDept())
+                      && statusFrom() == 'DRAFT'
+                      && statusTo() == 'FULLY_APPROVED'
+                      && request.resource.data.stage == 'FULLY_APPROVED'
+                      && requestLineDeptIds().size() == 1
+                      && arrayHasValue(requestLineDeptIds(), resourceFromDept())
+                      && request.resource.data.autoApprovedByDept != null
+                      && request.resource.data.autoApprovedByDept[resourceFromDept()] == true
+                    )
+
+                    // DeptManager يرفع الحالة داخل نافذة SUBMITTED / PARTIALLY / FULLY
+                 || (
+                      isDeptManager()
+                      && deptManagerScopeEither()
+                      && submitRank(statusFrom()) > 0
+                      && submitRank(statusTo()) >= submitRank(statusFrom())
+                      && statusTo() in ['SUBMITTED','PARTIALLY_APPROVED','FULLY_APPROVED']
+                    )
+
+                    // Cancel (SUBMITTED..STORE_PREPARING → CANCELED)
+                 || (statusTo() == 'CANCELED'
+                      && inSubmitWindow(statusFrom())
+                      && (
+                           (isRequester() && resourceOwnedByAuth())
+                           || deptManagerHasRequestAccess()
+                         )
+                    )
+
+                    // READY → CLOSED
+                 || (statusFrom() == 'READY' && statusTo() == 'CLOSED'
+                      && (
+                           (isRequester() && resourceOwnedByAuth())
+                           || deptManagerHasRequestAccess()
+                         )
+                    )
+                  )
+             )
+        )
+
+        // 5) مسار المخزن (Store Officer / Store Dept) مع فحص المخزون
+        || (
+          (isStoreOfficer() || isStoreDeptUser())
+          && (
+               (statusFrom() == 'FULLY_APPROVED'  && statusTo() == 'STORE_PREPARING')
+            || (statusFrom() == 'STORE_PREPARING' && statusTo() == 'READY')
+            || (statusFrom() == 'STORE_PREPARING' && statusTo() == 'FULLY_APPROVED')
+            || (statusTo() == 'REJECTED' && inSubmitWindow(statusFrom()))
+          )
+        );
+
+      /* Delete */
+      allow delete:
+        if isAdmin()
+        || (isRequester() && resourceOwnedByAuth() && statusFrom() == 'DRAFT');
+
+      /* ===== Subcollection: /requests/{reqId}/items/{itemId} ===== */
+      match /items/{itemId} {
+        function parent() {
+          return get(/databases/$(db)/documents/requests/$(reqId));
+        }
+
+        function parentOwnedByUser() {
+          return parent().data.createdBy != null
+            && parent().data.createdBy.uid == request.auth.uid;
+        }
+
+        function parentFromDeptInUser() {
+          return inUserDepts(docFromDept(parent().data));
+        }
+
+        function parentStatusAllowsRequesterEdit() {
+          return parent().data.status in ['DRAFT','SUBMITTED'];
+        }
+
+        function parentStatusAllowsLineEdit() {
+          return editableStage(parent().data.status);
+        }
+
+        /* Read lines */
+        allow read: if signedIn() && (
+            isAdmin()
+            || isStoreOfficer()
+            || isStoreDeptUser()
+            || inUserDepts(docFromDept(parent().data))
+            || arrayIntersectsUser(docLineDeptIds(parent().data))
+            || parent().data.createdBy.uid == request.auth.uid
+        );
+
+        /* Create line item */
+        allow create:
+            if isAdmin()
+            || (
+                 isDeptManager()
+                 && parentFromDeptInUser()
+                 && lineOwnerInUser(request.resource.data)
+                 && parentStatusAllowsLineEdit()
+               )
+            || (
+                 isRequester()
+                 && parentOwnedByUser()
+                 && parentStatusAllowsRequesterEdit()
+               );
+
+        /* Update line item */
+        allow update:
+            if isAdmin()
+            || request.resource.data == resource.data
+            || (
+                 isRequester()
+                 && parentOwnedByUser()
+                 && parentStatusAllowsRequesterEdit()
+               )
+            || (
+                 isDeptManager()
+                 && lineOwnerInUser(resource.data)
+                 && lineOwnerInUser(request.resource.data)
+                 && parentStatusAllowsLineEdit()
+               )
+            || (
+                 isDeptManager()
+                 && lineOwnerInUser(resource.data)
+                 && ownerApprovalOnly()
+                 && parentStatusAllowsLineEdit()
+               );
+
+        /* Delete line item */
+        allow delete:
+            if isAdmin()
+            || (
+                 isDeptManager()
+                 && lineOwnerInUser(resource.data)
+                 && parentStatusAllowsLineEdit()
+               )
+            || (
+                 isRequester()
+                 && parentOwnedByUser()
+                 && parentStatusAllowsRequesterEdit()
+               );
+      }
+    }
+
+    /* Default deny */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

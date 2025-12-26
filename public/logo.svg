@@ -1,0 +1,12 @@
+﻿<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="imsGradient" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0a4fdc"/>
+      <stop offset="1" stop-color="#2d8bff"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#imsGradient)"/>
+  <rect x="4" y="4" width="120" height="120" rx="24" stroke="rgba(255,255,255,0.4)" stroke-width="2" fill="none"/>
+  <text x="50%" y="72" text-anchor="middle" font-family="'Segoe UI', Inter, sans-serif" font-size="52" font-weight="700" fill="#ffffff">IMS</text>
+  <rect x="32" y="94" width="64" height="6" rx="3" fill="rgba(255,255,255,0.3)"/>
+</svg>
