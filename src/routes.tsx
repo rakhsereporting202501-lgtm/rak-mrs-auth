@@ -18,6 +18,8 @@ function Protected({ children }: { children: JSX.Element }) {
   return <AppShell>{children}</AppShell>;
 }
 
+const basename = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
+
 export const router = createBrowserRouter([
   { path: '/', element: <Protected><Requests /></Protected> },
   { path: '/requests', element: <Protected><Requests /></Protected> },
@@ -30,4 +32,4 @@ export const router = createBrowserRouter([
   { path: '/admin/seed-users', element: <Protected><AdminSeedUsers /></Protected> },
   { path: '/login', element: <Login /> },
   { path: '*', element: <Navigate to="/requests" replace /> },
-]);
+], { basename });
