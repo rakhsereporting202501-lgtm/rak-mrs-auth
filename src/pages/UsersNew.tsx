@@ -1,7 +1,19 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { doc, getDoc, getFirestore, writeBatch } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  getFirestore,
+  query,
+  serverTimestamp,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../context/AuthContext';
+import { initFirebase } from '../lib/firebase';
 
 const DEFAULT_DEPTS = [
   'HSE',
@@ -23,14 +35,19 @@ type RoleKey = typeof ROLE_KEYS[number];
 export default function UsersNew() {
   const { role } = useAuth();
   const nav = useNavigate();
-  const db = getFirestore();
+  const { uid: routeUid } = useParams();
+  const isEdit = !!routeUid;
+  const { app } = initFirebase();
+  const db = getFirestore(app);
 
   const [email, setEmail] = useState('');
   const [uid, setUid] = useState('');
   const [username, setUsername] = useState('');
+  const [originalUsername, setOriginalUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [departmentIds, setDepartmentIds] = useState<string[]>([]);
   const [deptInput, setDeptInput] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [roleFlags, setRoleFlags] = useState<Record<RoleKey, boolean>>({
     admin: false,
     auditor: false,
@@ -50,6 +67,46 @@ export default function UsersNew() {
   if (!role?.roles?.admin) {
     return <div className="card p-4">Admin only.</div>;
   }
+
+  useEffect(() => {
+    if (!role?.roles?.admin) return;
+    if (!isEdit || !routeUid) return;
+    const load = async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        const roleRef = doc(db, 'roles', routeUid);
+        const roleSnap = await getDoc(roleRef);
+        if (!roleSnap.exists()) {
+          setError('User not found.');
+          return;
+        }
+        const data = roleSnap.data() as any;
+        setUid(routeUid);
+        setEmail(data.email || '');
+        setFullName(data.fullName || '');
+        setDepartmentIds(Array.isArray(data.departmentIds) ? data.departmentIds : []);
+        setRoleFlags({
+          admin: !!data.roles?.admin,
+          auditor: !!data.roles?.auditor,
+          deptManager: !!data.roles?.deptManager,
+          requester: !!data.roles?.requester,
+          storeOfficer: !!data.roles?.storeOfficer,
+        });
+
+        const q = query(collection(db, 'usernames'), where('uid', '==', routeUid));
+        const snaps = await getDocs(q);
+        const uname = snaps.docs[0]?.id || '';
+        setUsername(uname);
+        setOriginalUsername(uname);
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load user.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    load();
+  }, [db, isEdit, routeUid, role?.roles?.admin]);
 
   const toggleDept = (dept: string) => {
     setDepartmentIds((prev) => (prev.includes(dept) ? prev.filter((d) => d !== dept) : [...prev, dept]));
@@ -87,43 +144,91 @@ export default function UsersNew() {
       const roleRef = doc(db, 'roles', cleanUid);
       const usernameRef = doc(db, 'usernames', cleanUsername);
       const [roleSnap, userSnap] = await Promise.all([getDoc(roleRef), getDoc(usernameRef)]);
-      if (roleSnap.exists()) {
+
+      if (!isEdit && roleSnap.exists()) {
         setError('This UID already exists in roles.');
         return;
       }
-      if (userSnap.exists()) {
+      if (!isEdit && userSnap.exists()) {
+        setError('This username already exists.');
+        return;
+      }
+      if (isEdit && originalUsername && cleanUsername !== originalUsername && userSnap.exists()) {
         setError('This username already exists.');
         return;
       }
 
       const batch = writeBatch(db);
-      batch.set(roleRef, {
-        fullName: cleanFullName,
-        email: cleanEmail,
-        departmentIds: cleanDepts,
-        roles: roleFlags,
-      });
+      if (isEdit) {
+        batch.set(roleRef, {
+          fullName: cleanFullName,
+          email: cleanEmail,
+          departmentIds: cleanDepts,
+          roles: roleFlags,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      } else {
+        batch.set(roleRef, {
+          fullName: cleanFullName,
+          email: cleanEmail,
+          departmentIds: cleanDepts,
+          roles: roleFlags,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      if (isEdit && originalUsername && cleanUsername !== originalUsername) {
+        batch.delete(doc(db, 'usernames', originalUsername));
+      }
+
       batch.set(usernameRef, {
         uid: cleanUid,
         email: cleanEmail,
         fullName: cleanFullName,
-      });
+      }, { merge: true });
+
       await batch.commit();
-      setSuccess('User role record created successfully.');
-      setEmail('');
-      setUid('');
-      setUsername('');
-      setFullName('');
-      setDepartmentIds([]);
-      setRoleFlags({
-        admin: false,
-        auditor: false,
-        deptManager: false,
-        requester: false,
-        storeOfficer: false,
-      });
+
+      if (newPassword) {
+        if (newPassword.length < 8) {
+          setError('New password must be at least 8 characters.');
+          return;
+        }
+        try {
+          const fn = httpsCallable(getFunctions(app), 'adminSetUserPassword');
+          await fn({ uid: cleanUid, password: newPassword });
+        } catch (err: any) {
+          const code = err?.code || '';
+          if (code === 'functions/not-found') {
+            setError('Password update requires the admin backend function to be deployed.');
+          } else if (code === 'permission-denied') {
+            setError('Password update denied. Admin permissions required.');
+          } else {
+            setError(err?.message || 'Password update failed.');
+          }
+          return;
+        }
+      }
+
+      setSuccess(isEdit ? 'User updated successfully.' : 'User role record created successfully.');
+      if (!isEdit) {
+        setEmail('');
+        setUid('');
+        setUsername('');
+        setFullName('');
+        setDepartmentIds([]);
+        setRoleFlags({
+          admin: false,
+          auditor: false,
+          deptManager: false,
+          requester: false,
+          storeOfficer: false,
+        });
+      }
+      setNewPassword('');
     } catch (err: any) {
-      setError(err?.message || 'Failed to create user.');
+      setError(err?.message || 'Failed to save user.');
     } finally {
       setBusy(false);
     }
@@ -132,7 +237,7 @@ export default function UsersNew() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="text-xl font-semibold">Create New User</div>
+        <div className="text-xl font-semibold">{isEdit ? 'Edit User' : 'Create New User'}</div>
         <button type="button" className="btn-ghost text-sm" onClick={() => nav('/users')}>Back</button>
       </div>
       <div className="card p-4 space-y-4">
@@ -148,7 +253,7 @@ export default function UsersNew() {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">User UID</label>
-            <input className="input w-full" value={uid} onChange={(e) => setUid(e.target.value)} />
+            <input className="input w-full" value={uid} onChange={(e) => setUid(e.target.value)} disabled={isEdit} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Username</label>
@@ -187,6 +292,18 @@ export default function UsersNew() {
         </div>
 
         <div>
+          <label className="block text-xs text-gray-500 mb-1">New password (optional)</label>
+          <input
+            type="password"
+            className="input w-full"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Leave blank to keep current password"
+          />
+          <div className="text-[11px] text-gray-400 mt-1">Minimum 8 characters.</div>
+        </div>
+
+        <div>
           <div className="text-xs text-gray-500 mb-2">Roles</div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {ROLE_KEYS.map((key) => (
@@ -206,7 +323,7 @@ export default function UsersNew() {
         {success && <div className="text-sm text-green-600">{success}</div>}
 
         <button type="button" className="btn-primary w-full disabled:opacity-50" disabled={busy} onClick={onSubmit}>
-          {busy ? 'Creating...' : 'Create User'}
+          {busy ? 'Saving...' : (isEdit ? 'Save Changes' : 'Create User')}
         </button>
       </div>
     </div>
