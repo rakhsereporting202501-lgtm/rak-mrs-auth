@@ -403,14 +403,8 @@ service cloud.firestore {
     }
 
     match /roles/{uid} {
-      allow read: if signedIn() && uid == request.auth.uid;
-      allow create: if isAdmin()
-        || (
-             signedIn()
-             && uid == request.auth.uid
-             && !exists(/databases/$(db)/documents/roles/$(uid))
-           );
-      allow update, delete: if isAdmin();
+      allow read: if signedIn() && (uid == request.auth.uid || isAdmin());
+      allow create, update, delete: if isAdmin();
     }
 
     match /projects/{id} {

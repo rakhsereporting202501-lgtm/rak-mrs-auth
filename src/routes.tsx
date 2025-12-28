@@ -5,6 +5,8 @@ import NewRequest from './pages/NewRequest';
 import Inventory from './pages/Inventory';
 import Reporting from './pages/Reporting';
 import Profile from './pages/Profile';
+import Users from './pages/Users';
+import UsersNew from './pages/UsersNew';
 import AdminSeed from './pages/AdminSeed';
 import AdminSeedUsers from './pages/AdminSeedUsers';
 import RequestDetails from './pages/RequestDetails';
@@ -28,6 +30,8 @@ export const router = createBrowserRouter([
   { path: '/inventory', element: <Protected><Inventory /></Protected> },
   { path: '/reporting', element: <Protected><Reporting /></Protected> },
   { path: '/profile', element: <Protected><Profile /></Protected> },
+  { path: '/users', element: <Protected><Users /></Protected> },
+  { path: '/users/new', element: <Protected><UsersNew /></Protected> },
   { path: '/admin/seed', element: <Protected><AdminSeed /></Protected> },
   { path: '/admin/seed-users', element: <Protected><AdminSeedUsers /></Protected> },
   { path: '/login', element: <Login /> },
