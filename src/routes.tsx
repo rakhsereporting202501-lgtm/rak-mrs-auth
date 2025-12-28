@@ -7,7 +7,6 @@ import Reporting from './pages/Reporting';
 import Profile from './pages/Profile';
 import Users from './pages/Users';
 import UsersNew from './pages/UsersNew';
-import UsersDepartments from './pages/UsersDepartments';
 import AdminSeed from './pages/AdminSeed';
 import AdminSeedUsers from './pages/AdminSeedUsers';
 import RequestDetails from './pages/RequestDetails';
@@ -33,7 +32,7 @@ export const router = createBrowserRouter([
   { path: '/profile', element: <Protected><Profile /></Protected> },
   { path: '/users', element: <Protected><Users /></Protected> },
   { path: '/users/new', element: <Protected><UsersNew /></Protected> },
-  { path: '/users/departments', element: <Protected><UsersDepartments /></Protected> },
+  { path: '/users/departments', element: <Navigate to="/users" replace /> },
   { path: '/users/:uid', element: <Protected><UsersNew /></Protected> },
   { path: '/admin/seed', element: <Protected><AdminSeed /></Protected> },
   { path: '/admin/seed-users', element: <Protected><AdminSeedUsers /></Protected> },

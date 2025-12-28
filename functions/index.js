@@ -27,3 +27,31 @@ exports.adminSetUserPassword = functions.https.onCall(async (data, context) => {
   await admin.auth().updateUser(targetUid, { password });
   return { ok: true };
 });
+
+exports.adminListAuthUsers = functions.https.onCall(async (_data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const callerUid = context.auth.uid;
+  const roleSnap = await admin.firestore().doc(`roles/${callerUid}`).get();
+  const isAdmin = !!roleSnap.data()?.roles?.admin;
+  if (!isAdmin) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin only.');
+  }
+
+  const users = [];
+  let nextPageToken;
+  do {
+    const res = await admin.auth().listUsers(1000, nextPageToken);
+    res.users.forEach((u) => {
+      users.push({
+        uid: u.uid,
+        creationTime: u.metadata?.creationTime || null,
+      });
+    });
+    nextPageToken = res.pageToken;
+  } while (nextPageToken);
+
+  return { users };
+});

@@ -48,6 +48,7 @@ export default function UsersNew() {
   const [departmentIds, setDepartmentIds] = useState<string[]>([]);
   const [deptInput, setDeptInput] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [roleFlags, setRoleFlags] = useState<Record<RoleKey, boolean>>({
     admin: false,
     auditor: false,
@@ -293,13 +294,22 @@ export default function UsersNew() {
 
         <div>
           <label className="block text-xs text-gray-500 mb-1">New password (optional)</label>
-          <input
-            type="password"
-            className="input w-full"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="Leave blank to keep current password"
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              className="input w-full pr-12"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Leave blank to keep current password"
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-600"
+              onClick={() => setShowPassword((v) => !v)}
+            >
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
           <div className="text-[11px] text-gray-400 mt-1">Minimum 8 characters.</div>
         </div>
 

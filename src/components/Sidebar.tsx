@@ -1,6 +1,6 @@
 // English-only build
 import { NavLink, Link } from 'react-router-dom';
-import { Inbox, Boxes, BarChart3, User, LogOut, Plus, Users } from 'lucide-react';
+import { Inbox, Boxes, BarChart3, User, LogOut, Plus, Users, UserPlus } from 'lucide-react';
 import { getAuth, signOut } from 'firebase/auth';
 import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -53,6 +53,7 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
           {canInventory && <Item to="/inventory" icon={Boxes} label={'Inventory'} />}
           {canReporting && <Item to="/reporting" icon={BarChart3} label={'Reporting'} />}
           {isAdmin && <Item to="/users" icon={Users} label={'Users'} />}
+          {isAdmin && <Item to="/users/new" icon={UserPlus} label={'Create User'} />}
           <Item to="/profile" icon={User} label={'Profile'} />
           <button onClick={()=>signOut(getAuth())} className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-blue-50">
             <LogOut className="h-4 w-4 icon-blue"/><span>Sign out</span>
