@@ -25,6 +25,10 @@ type ItemDoc = {
   updatedAt?: any;
 };
 
+type UnitState = ItemUnit & {
+  perPrev: number;
+};
+
 export default function InventoryV2Item() {
   const { role, user } = useAuth();
   const nav = useNavigate();
@@ -40,8 +44,8 @@ export default function InventoryV2Item() {
   const [descriptionAr, setDescriptionAr] = useState('');
   const [descriptionEn, setDescriptionEn] = useState('');
   const [snEnabled, setSnEnabled] = useState(false);
-  const [units, setUnits] = useState<ItemUnit[]>([
-    { code: 'PCS', label: 'Piece', perBase: 1 },
+  const [units, setUnits] = useState<UnitState[]>([
+    { code: 'PCS', label: 'Piece', perBase: 1, perPrev: 1 },
   ]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +70,18 @@ export default function InventoryV2Item() {
         setDescriptionAr(data.descriptionAr || '');
         setDescriptionEn(data.descriptionEn || '');
         setSnEnabled(!!data.snEnabled);
-        setUnits(Array.isArray(data.units) && data.units.length ? data.units : [{ code: 'PCS', label: 'Piece', perBase: 1 }]);
+        const loaded = Array.isArray(data.units) && data.units.length ? data.units : [{ code: 'PCS', label: 'Piece', perBase: 1 }];
+        const normalized: UnitState[] = [];
+        loaded.forEach((u, idx) => {
+          if (idx === 0) {
+            normalized.push({ ...u, perBase: 1, perPrev: 1 });
+          } else {
+            const prevBase = normalized[idx - 1]?.perBase || 1;
+            const perPrev = prevBase ? (Number(u.perBase) || 1) / prevBase : 1;
+            normalized.push({ ...u, perBase: Number(u.perBase) || 1, perPrev });
+          }
+        });
+        setUnits(normalized.length ? normalized : [{ code: 'PCS', label: 'Piece', perBase: 1, perPrev: 1 }]);
       } catch (err: any) {
         setError(err?.message || 'Failed to load item.');
       } finally {
@@ -83,24 +98,50 @@ export default function InventoryV2Item() {
     return <div className="card p-4">Access denied.</div>;
   }
 
+  const recalcFrom = (list: UnitState[], startIdx: number) => {
+    const next = list.map((u) => ({ ...u }));
+    for (let i = Math.max(0, startIdx); i < next.length; i += 1) {
+      if (i === 0) {
+        next[i].perPrev = 1;
+        next[i].perBase = 1;
+      } else {
+        const prevBase = next[i - 1].perBase || 1;
+        const perPrev = Number(next[i].perPrev) || 1;
+        next[i].perPrev = perPrev;
+        next[i].perBase = prevBase * perPrev;
+      }
+    }
+    return next;
+  };
+
   const updateUnitCode = (idx: number, code: string) => {
     const opt = getUnitOption(code);
-    setUnits((prev) => prev.map((u, i) => (i === idx ? { ...u, code, label: opt?.label || code } : u)));
+    setUnits((prev) => {
+      const next = prev.map((u, i) => (i === idx ? { ...u, code, label: opt?.label || code } : u));
+      return recalcFrom(next, idx);
+    });
   };
 
   const updateUnitValue = (idx: number, value: number) => {
-    setUnits((prev) => prev.map((u, i) => (i === idx ? { ...u, perBase: value } : u)));
+    setUnits((prev) => {
+      const next = prev.map((u, i) => (i === idx ? { ...u, perPrev: value } : u));
+      return recalcFrom(next, idx);
+    });
   };
 
   const addUnitRow = () => {
     if (!availableUnits.length) return;
     const next = availableUnits[0];
-    setUnits((prev) => [...prev, { code: next.code, label: next.label, perBase: 1 }]);
+    setUnits((prev) => {
+      const perPrev = 1;
+      const nextList = [...prev, { code: next.code, label: next.label, perBase: 1, perPrev }];
+      return recalcFrom(nextList, prev.length);
+    });
   };
 
   const removeUnitRow = (idx: number) => {
     if (idx === 0) return;
-    setUnits((prev) => prev.filter((_, i) => i !== idx));
+    setUnits((prev) => recalcFrom(prev.filter((_, i) => i !== idx), idx - 1));
   };
 
   const onSave = async () => {
@@ -234,12 +275,15 @@ export default function InventoryV2Item() {
                       className="input w-full"
                       value={unit.code}
                       onChange={(e) => updateUnitCode(idx, e.target.value)}
-                      disabled={isBase}
                     >
-                      <option value={unit.code}>{unit.label} ({unit.code})</option>
-                      {availableUnits.map((u) => (
-                        <option key={u.code} value={u.code}>{u.label} ({u.code})</option>
-                      ))}
+                      {UNIT_OPTIONS.map((u) => {
+                        const usedElsewhere = usedUnitCodes.has(u.code) && u.code !== unit.code;
+                        return (
+                          <option key={u.code} value={u.code} disabled={usedElsewhere}>
+                            ({u.label} - {u.code})
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                   <div className="col-span-2">
@@ -248,7 +292,7 @@ export default function InventoryV2Item() {
                       min={1}
                       step={1}
                       className="input w-full"
-                      value={unit.perBase}
+                      value={unit.perPrev}
                       onChange={(e) => updateUnitValue(idx, Number(e.target.value))}
                       disabled={isBase}
                     />
@@ -270,11 +314,45 @@ export default function InventoryV2Item() {
           </div>
           {units.length > 1 && (
             <div className="text-xs text-gray-500">
-              {units.slice(1).map((u) => (
-                <div key={u.code}>1 {units[0].code} = {u.perBase} {u.code}</div>
+              {units.slice(1).map((u, idx) => (
+                <div key={u.code}>
+                  1 {units[idx].code} = {u.perPrev} {u.code}
+                </div>
               ))}
             </div>
           )}
+          <div className="text-xs text-gray-600 leading-5 space-y-2">
+            <div>1. الوحدات العددية (Discrete Units)</div>
+            <div>تُستخدم للأصناف التي تُباع بالقطعة ولا يمكن تجزئتها:</div>
+            <div>قطعة (Piece - PCS): الوحدة الأكثر شيوعاً (مثل: هاتف، قلم).</div>
+            <div>وحدة (Unit - UN): مصطلح عام لأي صنف مستقل.</div>
+            <div>طقم (Set - SET): مجموعة عناصر تُباع معاً (مثل: طقم أدوات مائدة).</div>
+            <div>زوج (Pair - PR): للأصناف التي تأتي باثنين (مثل: أحذية، قفازات).</div>
+            <div>درزن (Dozen - DZ): مجموعة من 12 قطعة.</div>
+            <div>2. وحدات الوزن (Weight Units)</div>
+            <div>تُستخدم للمواد الصلبة أو السائبة (Bulk):</div>
+            <div>كيلوجرام (Kilogram - KG): الوحدة الأساسية عالمياً.</div>
+            <div>جرام (Gram - G): للأصناف الصغيرة أو الغالية (مثل: الذهب، التوابل).</div>
+            <div>طن (Metric Ton - MT): للكميات الكبيرة جداً (مثل: الحديد، الإسمنت).</div>
+            <div>رطل (Pound - LB): يُستخدم غالباً في الأنظمة الأمريكية والبريطانية.</div>
+            <div>3. وحدات الحجم والسوائل (Volume/Liquid Units)</div>
+            <div>لتر (Liter - L): للسوائل (مثل: الحليب، المنظفات).</div>
+            <div>ملليلتر (Milliliter - ML): للعبوات الصغيرة (مثل: العطور، الأدوية).</div>
+            <div>متر مكعب (Cubic Meter - CBM): يستخدم في الشحن وحساب المساحات التخزينية.</div>
+            <div>جالون (Gallon - GAL): للوقود أو الدهانات في بعض الدول.</div>
+            <div>4. وحدات القياس الطولية (Length Units)</div>
+            <div>تُستخدم للأصناف التي تُباع حسب طولها:</div>
+            <div>متر (Meter - M): (مثل: الأقمشة، الكابلات الكهربائية).</div>
+            <div>سنتيمتر (Centimeter - CM): للقياسات الدقيقة.</div>
+            <div>قدم (Foot - FT) أو بوصة (Inch - IN): شائعة في مواد البناء والنجارة.</div>
+            <div>5. وحدات التعبئة والتغليف (Packaging Units)</div>
+            <div>تُستخدم عند تحويل الوحدات الصغيرة إلى كميات تجارية:</div>
+            <div>صندوق (Box / Carton - BX/CT): يحتوي على عدد معين من القطع.</div>
+            <div>رول / لفة (Roll - RO): (مثل: الأسلاك، الورق، السجاد).</div>
+            <div>كيس (Bag - BG): (مثل: الأرز، الدقيق).</div>
+            <div>طبلية / طبلية خشبية (Pallet - PLT): تستخدم في المستودعات الكبيرة للشحن.</div>
+            <div>شريط (Strip): يستخدم غالباً في الأدوية (شريط حبوب).</div>
+          </div>
         </div>
 
         {error && <div className="text-sm text-red-600">{error}</div>}

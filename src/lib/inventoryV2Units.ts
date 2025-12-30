@@ -11,14 +11,28 @@ export type ItemUnit = {
 
 export const UNIT_OPTIONS: UnitOption[] = [
   { code: 'PCS', label: 'Piece' },
-  { code: 'EA', label: 'Each' },
-  { code: 'PR', label: 'Pair' },
+  { code: 'UN', label: 'Unit' },
   { code: 'SET', label: 'Set' },
-  { code: 'BOX', label: 'Box' },
-  { code: 'PACK', label: 'Pack' },
+  { code: 'PR', label: 'Pair' },
+  { code: 'DZ', label: 'Dozen' },
   { code: 'KG', label: 'Kilogram' },
+  { code: 'G', label: 'Gram' },
+  { code: 'MT', label: 'Metric Ton' },
+  { code: 'LB', label: 'Pound' },
   { code: 'L', label: 'Liter' },
+  { code: 'ML', label: 'Milliliter' },
+  { code: 'CBM', label: 'Cubic Meter' },
+  { code: 'GAL', label: 'Gallon' },
   { code: 'M', label: 'Meter' },
+  { code: 'CM', label: 'Centimeter' },
+  { code: 'FT', label: 'Foot' },
+  { code: 'IN', label: 'Inch' },
+  { code: 'BX', label: 'Box' },
+  { code: 'CT', label: 'Carton' },
+  { code: 'RO', label: 'Roll' },
+  { code: 'BG', label: 'Bag' },
+  { code: 'PLT', label: 'Pallet' },
+  { code: 'STRIP', label: 'Strip' },
 ];
 
 export function getUnitLabel(code: string): string {
