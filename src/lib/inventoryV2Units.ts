@@ -11,7 +11,6 @@ export type ItemUnit = {
 
 export const UNIT_OPTIONS: UnitOption[] = [
   { code: 'PCS', label: 'Piece' },
-  { code: 'UN', label: 'Unit' },
   { code: 'SET', label: 'Set' },
   { code: 'PR', label: 'Pair' },
   { code: 'DZ', label: 'Dozen' },
@@ -27,12 +26,7 @@ export const UNIT_OPTIONS: UnitOption[] = [
   { code: 'CM', label: 'Centimeter' },
   { code: 'FT', label: 'Foot' },
   { code: 'IN', label: 'Inch' },
-  { code: 'BX', label: 'Box' },
-  { code: 'CT', label: 'Carton' },
   { code: 'RO', label: 'Roll' },
-  { code: 'BG', label: 'Bag' },
-  { code: 'PLT', label: 'Pallet' },
-  { code: 'STRIP', label: 'Strip' },
 ];
 
 export function getUnitLabel(code: string): string {
