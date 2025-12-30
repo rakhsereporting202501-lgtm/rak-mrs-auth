@@ -11,7 +11,6 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../context/AuthContext';
 import { initFirebase } from '../lib/firebase';
 
@@ -191,28 +190,16 @@ export default function UsersNew() {
 
       await batch.commit();
 
-      if (newPassword) {
-        if (newPassword.length < 8) {
-          setError('New password must be at least 8 characters.');
-          return;
-        }
-        try {
-          const fn = httpsCallable(getFunctions(app), 'adminSetUserPassword');
-          await fn({ uid: cleanUid, password: newPassword });
-        } catch (err: any) {
-          const code = err?.code || '';
-          if (code === 'functions/not-found') {
-            setError('Password update requires the admin backend function to be deployed.');
-          } else if (code === 'permission-denied') {
-            setError('Password update denied. Admin permissions required.');
-          } else {
-            setError(err?.message || 'Password update failed.');
-          }
-          return;
-        }
+      if (newPassword && newPassword.length < 8) {
+        setError('New password must be at least 8 characters.');
+        return;
       }
 
-      setSuccess(isEdit ? 'User updated successfully.' : 'User role record created successfully.');
+      setSuccess(
+        newPassword
+          ? 'User saved. Password changes must be handled in Firebase Authentication.'
+          : (isEdit ? 'User updated successfully.' : 'User role record created successfully.')
+      );
       if (!isEdit) {
         setEmail('');
         setUid('');
@@ -311,6 +298,7 @@ export default function UsersNew() {
             </button>
           </div>
           <div className="text-[11px] text-gray-400 mt-1">Minimum 8 characters.</div>
+          <div className="text-[11px] text-gray-400">Password changes are applied in Firebase Authentication.</div>
         </div>
 
         <div>

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getFirestore, onSnapshot } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { initFirebase } from '../lib/firebase';
@@ -12,6 +11,7 @@ type RoleDoc = {
   departmentIds?: string[];
   roles?: Record<string, boolean>;
   createdAt?: any;
+  updatedAt?: any;
 };
 
 type UserRow = {
@@ -22,6 +22,7 @@ type UserRow = {
   departmentIds?: string[];
   roles?: Record<string, boolean>;
   createdAt?: any;
+  updatedAt?: any;
 };
 
 function formatDate(value: any) {
@@ -39,7 +40,6 @@ export default function Users() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [usernames, setUsernames] = useState<Record<string, string>>({});
   const [openDept, setOpenDept] = useState<Record<string, boolean>>({});
-  const [authCreated, setAuthCreated] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!role?.roles?.admin) return;
@@ -55,6 +55,7 @@ export default function Users() {
           departmentIds: Array.isArray(data.departmentIds) ? data.departmentIds : [],
           roles: data.roles || {},
           createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
         };
       });
       setUsers(next);
@@ -75,24 +76,6 @@ export default function Users() {
       setUsernames(map);
     });
     return () => unsub();
-  }, [role?.roles?.admin]);
-
-  useEffect(() => {
-    if (!role?.roles?.admin) return;
-    const { app } = initFirebase();
-    const fn = httpsCallable(getFunctions(app), 'adminListAuthUsers');
-    fn({})
-      .then((res: any) => {
-        const list = res?.data?.users || [];
-        const map: Record<string, string> = {};
-        list.forEach((u: any) => {
-          if (u?.uid && u?.creationTime) map[u.uid] = u.creationTime;
-        });
-        setAuthCreated(map);
-      })
-      .catch(() => {
-        setAuthCreated({});
-      });
   }, [role?.roles?.admin]);
 
   const filtered = useMemo(() => {
@@ -163,7 +146,7 @@ export default function Users() {
                   {list.map((user) => {
                     const username = usernames[user.uid] || '-';
                     const roles = Object.entries(user.roles || {}).filter(([_, v]) => v).map(([k]) => k);
-                    const createdValue = user.createdAt || authCreated[user.uid];
+                    const createdValue = user.createdAt || user.updatedAt;
                     return (
                       <button
                         key={user.uid}

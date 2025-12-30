@@ -12,6 +12,7 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
   const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
   const canRequest = !!role?.roles?.requester; // requester only
   const canInventory = !!role?.roles?.storeOfficer; // storeOfficer only
+  const canInventoryV2 = !!role?.roles?.storeOfficer || !!role?.roles?.admin;
   const canReporting = !!role?.roles?.auditor; // auditor only
   const isAdmin = !!role?.roles?.admin;
   const showNew = !!canRequest;
@@ -51,6 +52,7 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
             </NavLink>
           )}
           {canInventory && <Item to="/inventory" icon={Boxes} label={'Inventory'} />}
+          {canInventoryV2 && <Item to="/inventory-v2" icon={Boxes} label={'Inventory V2'} />}
           {canReporting && <Item to="/reporting" icon={BarChart3} label={'Reporting'} />}
           {isAdmin && <Item to="/users" icon={Users} label={'Users'} />}
           {isAdmin && <Item to="/users/new" icon={UserPlus} label={'Create User'} />}

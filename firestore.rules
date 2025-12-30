@@ -423,6 +423,12 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin() || isStoreOfficer();
     }
 
+    /* Inventory V2 items */
+    match /inventoryV2_items/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin() || isStoreOfficer();
+    }
+
     /* RQ counters */
     match /counters/{key} {
       allow read: if signedIn();

@@ -3,6 +3,11 @@ import Login from './pages/Login';
 import Requests from './pages/Requests';
 import NewRequest from './pages/NewRequest';
 import Inventory from './pages/Inventory';
+import InventoryV2 from './pages/InventoryV2';
+import InventoryV2Create from './pages/InventoryV2Create';
+import InventoryV2Item from './pages/InventoryV2Item';
+import InventoryV2Add from './pages/InventoryV2Add';
+import InventoryV2Stock from './pages/InventoryV2Stock';
 import Reporting from './pages/Reporting';
 import Profile from './pages/Profile';
 import Users from './pages/Users';
@@ -28,6 +33,12 @@ export const router = createBrowserRouter([
   { path: '/requests/new', element: <Protected><NewRequest /></Protected> },
   { path: '/requests/:id', element: <Protected><RequestDetails /></Protected> },
   { path: '/inventory', element: <Protected><Inventory /></Protected> },
+  { path: '/inventory-v2', element: <Protected><InventoryV2 /></Protected> },
+  { path: '/inventory-v2/create', element: <Protected><InventoryV2Create /></Protected> },
+  { path: '/inventory-v2/create/new', element: <Protected><InventoryV2Item /></Protected> },
+  { path: '/inventory-v2/create/:id', element: <Protected><InventoryV2Item /></Protected> },
+  { path: '/inventory-v2/add', element: <Protected><InventoryV2Add /></Protected> },
+  { path: '/inventory-v2/stock', element: <Protected><InventoryV2Stock /></Protected> },
   { path: '/reporting', element: <Protected><Reporting /></Protected> },
   { path: '/profile', element: <Protected><Profile /></Protected> },
   { path: '/users', element: <Protected><Users /></Protected> },
