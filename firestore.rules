@@ -428,6 +428,8 @@ service cloud.firestore {
       allow read: if signedIn()
         && (
              isAdmin()
+             || resource.data.ownerDeptId == null
+             || resource.data.ownerDeptId == ''
              || inUserDepts(resource.data.ownerDeptId)
            );
       allow create: if isAdmin()

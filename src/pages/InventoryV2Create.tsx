@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, getFirestore, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, getFirestore, onSnapshot, query as fsQuery, where } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,7 @@ type InventoryV2Item = {
   units?: ItemUnit[];
   stockBaseQty?: number;
   updatedAt?: any;
+  ownerDeptId?: string;
 };
 
 export default function InventoryV2Create() {
@@ -24,44 +25,69 @@ export default function InventoryV2Create() {
   const isAdmin = !!role?.roles?.admin;
   const canManage = isAdmin || (!!role?.roles?.deptManager && !!role?.roles?.storeOfficer);
   const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
-  const [items, setItems] = useState<InventoryV2Item[]>([]);
-  const [query, setQuery] = useState('');
+  const [deptItems, setDeptItems] = useState<InventoryV2Item[]>([]);
+  const [unassignedItems, setUnassignedItems] = useState<InventoryV2Item[]>([]);
+  const [emptyDeptItems, setEmptyDeptItems] = useState<InventoryV2Item[]>([]);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!canManage) return;
     const { app } = initFirebase();
     const db = getFirestore(app);
     const baseRef = collection(db, 'inventoryV2_items');
-    const ref = isAdmin || !myDepts.length
-      ? baseRef
-      : query(baseRef, where('ownerDeptId', 'in', myDepts.slice(0, 10)));
-    const unsub = onSnapshot(ref, (snap) => {
-      const next = snap.docs.map((doc) => {
-        const data = doc.data() as any;
-        return {
-          id: doc.id,
-          itemCode: data.itemCode || doc.id,
-          nameEn: data.nameEn || '',
-          nameAr: data.nameAr || '',
-          descriptionEn: data.descriptionEn || '',
-          descriptionAr: data.descriptionAr || '',
-          units: Array.isArray(data.units) ? data.units : [],
-          stockBaseQty: typeof data.stockBaseQty === 'number' ? data.stockBaseQty : 0,
-          ownerDeptId: data.ownerDeptId || '',
-        } as InventoryV2Item;
-      });
-      next.sort((a, b) => {
-        const aTime = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
-        const bTime = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : (b.updatedAt ? new Date(b.updatedAt).getTime() : 0);
-        return bTime - aTime;
-      });
-      setItems(next);
+    const mapSnapshot = (snap: any): InventoryV2Item[] => snap.docs.map((doc: any) => {
+      const data = doc.data() as any;
+      return {
+        id: doc.id,
+        itemCode: data.itemCode || doc.id,
+        nameEn: data.nameEn || '',
+        nameAr: data.nameAr || '',
+        descriptionEn: data.descriptionEn || '',
+        descriptionAr: data.descriptionAr || '',
+        units: Array.isArray(data.units) ? data.units : [],
+        stockBaseQty: typeof data.stockBaseQty === 'number' ? data.stockBaseQty : 0,
+        updatedAt: data.updatedAt || null,
+        ownerDeptId: data.ownerDeptId || null,
+      };
     });
-    return () => unsub();
+    const unsubs: Array<() => void> = [];
+
+    if (isAdmin) {
+      unsubs.push(onSnapshot(baseRef, (snap) => setDeptItems(mapSnapshot(snap))));
+      setUnassignedItems([]);
+      setEmptyDeptItems([]);
+    } else {
+      if (myDepts.length) {
+        const deptRef = fsQuery(baseRef, where('ownerDeptId', 'in', myDepts.slice(0, 10)));
+        unsubs.push(onSnapshot(deptRef, (snap) => setDeptItems(mapSnapshot(snap))));
+      } else {
+        setDeptItems([]);
+      }
+      const unassignedRef = fsQuery(baseRef, where('ownerDeptId', '==', null));
+      unsubs.push(onSnapshot(unassignedRef, (snap) => setUnassignedItems(mapSnapshot(snap))));
+      const emptyRef = fsQuery(baseRef, where('ownerDeptId', '==', ''));
+      unsubs.push(onSnapshot(emptyRef, (snap) => setEmptyDeptItems(mapSnapshot(snap))));
+    }
+
+    return () => unsubs.forEach((unsub) => unsub());
   }, [canManage, isAdmin, myDepts.join('|')]);
 
+  const items = useMemo(() => {
+    const merged = new Map<string, InventoryV2Item>();
+    [...deptItems, ...unassignedItems, ...emptyDeptItems].forEach((item) => {
+      merged.set(item.id, item);
+    });
+    const list = Array.from(merged.values());
+    list.sort((a, b) => {
+      const aTime = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
+      const bTime = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : (b.updatedAt ? new Date(b.updatedAt).getTime() : 0);
+      return bTime - aTime;
+    });
+    return list;
+  }, [deptItems, unassignedItems, emptyDeptItems]);
+
   const filtered = useMemo(() => {
-    const tokens = query.toLowerCase().split(/\s+/).map((t) => t.trim()).filter(Boolean);
+    const tokens = search.toLowerCase().split(/\s+/).map((t) => t.trim()).filter(Boolean);
     if (!tokens.length) return items;
     return items.filter((item) => {
       const units = (item.units || []).map((u) => `${u.code} ${u.label}`).join(' ').toLowerCase();
@@ -73,7 +99,7 @@ export default function InventoryV2Create() {
       ].join(' ').toLowerCase();
       return tokens.every((t) => hay.includes(t));
     });
-  }, [items, query]);
+  }, [items, search]);
 
   if (!canManage) {
     return <div className="card p-4">Access denied.</div>;
@@ -83,12 +109,12 @@ export default function InventoryV2Create() {
     <div className="space-y-4">
       <div className="text-xl font-semibold">Inventory V2 - Create</div>
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
         <input
-          className="input w-full pl-12"
+          className="input w-full pl-14"
           placeholder="Search items by code, name, or unit"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
@@ -105,7 +131,7 @@ export default function InventoryV2Create() {
         {filtered.map((item) => {
           const baseUnit = item.units && item.units.length ? item.units[0].code : '-';
           const conversions = item.units && item.units.length > 1
-            ? item.units.slice(1).map((u) => `1 ${baseUnit} = ${u.perBase} ${u.code}`)
+            ? item.units.slice(1).map((u) => `1 ${u.code} = ${u.perBase} ${baseUnit}`)
             : [];
           return (
             <button
@@ -126,7 +152,7 @@ export default function InventoryV2Create() {
               </div>
               {conversions.length > 0 && (
                 <div className="text-[11px] text-gray-500 mt-2">
-                  {conversions.join('  •  ')}
+                  {conversions.join(' | ')}
                 </div>
               )}
             </button>

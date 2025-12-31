@@ -18,6 +18,7 @@ type ItemDoc = {
   nameEn: string;
   descriptionAr?: string;
   descriptionEn?: string;
+  ownerDeptId?: string;
   snEnabled?: boolean;
   units?: ItemUnit[];
   stockBaseQty?: number;
