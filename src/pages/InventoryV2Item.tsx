@@ -170,6 +170,10 @@ export default function InventoryV2Item() {
   const onSave = async () => {
     setError(null);
     setSuccess(null);
+    if (!canManage) {
+      setError('Permission denied. Store Officer role is required.');
+      return;
+    }
     const cleanCode = itemCode.trim().toUpperCase();
     if (!cleanCode) return setError('Item code is required.');
     if (!nameEn.trim()) return setError('English name is required.');
@@ -209,6 +213,12 @@ export default function InventoryV2Item() {
         units: units.map((u) => ({ code: u.code, label: u.label, perBase: Number(u.perBase) || 1 })),
         updatedAt: serverTimestamp(),
       };
+      console.info('Inventory V2 save payload', {
+        uid: user?.uid,
+        isAdmin,
+        isStoreOfficer: !!role?.roles?.storeOfficer,
+        ownerDeptIds: payload.ownerDeptIds,
+      });
       if (!isEdit) {
         await setDoc(ref, {
           ...payload,
@@ -228,7 +238,11 @@ export default function InventoryV2Item() {
         nav('/inventory-v2/create');
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to save item.');
+      if (err?.code === 'permission-denied') {
+        setError('Permission denied. Check Store Officer role and department access.');
+      } else {
+        setError(err?.message || 'Failed to save item.');
+      }
     } finally {
       setBusy(false);
     }
@@ -242,7 +256,11 @@ export default function InventoryV2Item() {
       await deleteDoc(doc(db, 'inventoryV2_items', id));
       nav('/inventory-v2/create');
     } catch (err: any) {
-      setError(err?.message || 'Failed to delete item.');
+      if (err?.code === 'permission-denied') {
+        setError('Permission denied. Check Store Officer role and department access.');
+      } else {
+        setError(err?.message || 'Failed to delete item.');
+      }
     } finally {
       setBusy(false);
     }

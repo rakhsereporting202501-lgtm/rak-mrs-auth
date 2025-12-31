@@ -50,6 +50,30 @@ service cloud.firestore {
       return arr != null && arr.size() > 0 && arr.hasAny(userDeptIds());
     }
 
+    /* ===== Helpers: Inventory V2 ===== */
+
+    function invUnassigned(data) {
+      return data == null
+        || data.ownerDeptIds == null
+        || (data.ownerDeptIds != null && data.ownerDeptIds.size() == 0)
+        || data.ownerDeptId == null
+        || data.ownerDeptId == '';
+    }
+
+    function invMatchesUser(data) {
+      return data != null
+        && (
+             arrayIntersectsUser(data.ownerDeptIds)
+             || inUserDepts(data.ownerDeptId)
+           );
+    }
+
+    function invRequestAllowed() {
+      return request.resource.data.ownerDeptIds == null
+        || (request.resource.data.ownerDeptIds != null && request.resource.data.ownerDeptIds.size() == 0)
+        || request.resource.data.ownerDeptIds.hasOnly(userDeptIds());
+    }
+
     /* ===== Helpers: Request document structure ===== */
 
     function docFromDept(doc) {
@@ -431,52 +455,31 @@ service cloud.firestore {
              || (
                   isStoreOfficer()
                   && (
-                       resource.data.ownerDeptIds == null
-                       || resource.data.ownerDeptIds.size() == 0
-                       || resource.data.ownerDeptId == null
-                       || resource.data.ownerDeptId == ''
-                       || inUserDepts(resource.data.ownerDeptId)
-                       || (
-                            resource.data.ownerDeptIds != null
-                            && resource.data.ownerDeptIds.hasAny(userDeptIds())
-                          )
+                       invUnassigned(resource.data)
+                       || invMatchesUser(resource.data)
                      )
                 )
            );
       allow create: if isAdmin()
         || (
              isStoreOfficer()
-             && (
-                  request.resource.data.ownerDeptIds == null
-                  || request.resource.data.ownerDeptIds.size() == 0
-                  || request.resource.data.ownerDeptIds.hasOnly(userDeptIds())
-                )
+             && invRequestAllowed()
            );
       allow update: if isAdmin()
         || (
              isStoreOfficer()
              && (
-                  (
-                    resource.data.ownerDeptIds != null
-                    && resource.data.ownerDeptIds.hasAny(userDeptIds())
-                  )
-                  || inUserDepts(resource.data.ownerDeptId)
+                  invUnassigned(resource.data)
+                  || invMatchesUser(resource.data)
                 )
-             && (
-                  request.resource.data.ownerDeptIds == null
-                  || request.resource.data.ownerDeptIds.size() == 0
-                  || request.resource.data.ownerDeptIds.hasOnly(userDeptIds())
-                )
+             && invRequestAllowed()
            );
       allow delete: if isAdmin()
         || (
              isStoreOfficer()
              && (
-                  (
-                    resource.data.ownerDeptIds != null
-                    && resource.data.ownerDeptIds.hasAny(userDeptIds())
-                  )
-                  || inUserDepts(resource.data.ownerDeptId)
+                  invUnassigned(resource.data)
+                  || invMatchesUser(resource.data)
                 )
            );
     }
