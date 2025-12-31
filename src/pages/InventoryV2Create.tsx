@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, getFirestore, onSnapshot } from 'firebase/firestore';
+import { collection, getFirestore, onSnapshot, query, where } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -21,15 +21,21 @@ type InventoryV2Item = {
 export default function InventoryV2Create() {
   const { role } = useAuth();
   const nav = useNavigate();
-  const canInventory = !!role?.roles?.storeOfficer || !!role?.roles?.admin;
+  const isAdmin = !!role?.roles?.admin;
+  const canManage = isAdmin || (!!role?.roles?.deptManager && !!role?.roles?.storeOfficer);
+  const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
   const [items, setItems] = useState<InventoryV2Item[]>([]);
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    if (!canInventory) return;
+    if (!canManage) return;
     const { app } = initFirebase();
     const db = getFirestore(app);
-    const unsub = onSnapshot(collection(db, 'inventoryV2_items'), (snap) => {
+    const baseRef = collection(db, 'inventoryV2_items');
+    const ref = isAdmin || !myDepts.length
+      ? baseRef
+      : query(baseRef, where('ownerDeptId', 'in', myDepts.slice(0, 10)));
+    const unsub = onSnapshot(ref, (snap) => {
       const next = snap.docs.map((doc) => {
         const data = doc.data() as any;
         return {
@@ -41,7 +47,7 @@ export default function InventoryV2Create() {
           descriptionAr: data.descriptionAr || '',
           units: Array.isArray(data.units) ? data.units : [],
           stockBaseQty: typeof data.stockBaseQty === 'number' ? data.stockBaseQty : 0,
-          updatedAt: data.updatedAt,
+          ownerDeptId: data.ownerDeptId || '',
         } as InventoryV2Item;
       });
       next.sort((a, b) => {
@@ -52,7 +58,7 @@ export default function InventoryV2Create() {
       setItems(next);
     });
     return () => unsub();
-  }, [canInventory]);
+  }, [canManage, isAdmin, myDepts.join('|')]);
 
   const filtered = useMemo(() => {
     const tokens = query.toLowerCase().split(/\s+/).map((t) => t.trim()).filter(Boolean);
@@ -63,15 +69,13 @@ export default function InventoryV2Create() {
         item.itemCode,
         item.nameEn,
         item.nameAr,
-        item.descriptionEn,
-        item.descriptionAr,
         units,
       ].join(' ').toLowerCase();
       return tokens.every((t) => hay.includes(t));
     });
   }, [items, query]);
 
-  if (!canInventory) {
+  if (!canManage) {
     return <div className="card p-4">Access denied.</div>;
   }
 
@@ -79,10 +83,10 @@ export default function InventoryV2Create() {
     <div className="space-y-4">
       <div className="text-xl font-semibold">Inventory V2 - Create</div>
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <input
-          className="input w-full pl-9"
-          placeholder="Search items by code, name, description, or unit"
+          className="input w-full pl-12"
+          placeholder="Search items by code, name, or unit"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -114,7 +118,6 @@ export default function InventoryV2Create() {
                 <div className="min-w-0">
                   <div className="text-xs text-gray-400">{item.itemCode}</div>
                   <div className="text-sm font-semibold truncate">{item.nameEn || item.itemCode}</div>
-                  <div className="text-xs text-gray-500">{item.descriptionEn || '-'}</div>
                 </div>
                 <div className="text-right">
                   <div className="text-xl font-semibold text-blue-700">{item.stockBaseQty}</div>

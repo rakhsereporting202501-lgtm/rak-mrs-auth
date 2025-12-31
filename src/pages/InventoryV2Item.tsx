@@ -36,13 +36,21 @@ export default function InventoryV2Item() {
   const isEdit = !!id && id !== 'new';
   const { app } = initFirebase();
   const db = getFirestore(app);
-  const canInventory = !!role?.roles?.storeOfficer || !!role?.roles?.admin;
+  const isAdmin = !!role?.roles?.admin;
+  const canManage = isAdmin || (!!role?.roles?.deptManager && !!role?.roles?.storeOfficer);
+  const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
+  const defaultDepts = ['HSE', 'TRP', 'VRP', 'Store'];
+  const deptOptions = useMemo(() => {
+    if (isAdmin) return Array.from(new Set([...defaultDepts, ...myDepts]));
+    return myDepts;
+  }, [isAdmin, myDepts.join('|')]);
 
   const [itemCode, setItemCode] = useState('');
   const [nameAr, setNameAr] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [descriptionAr, setDescriptionAr] = useState('');
   const [descriptionEn, setDescriptionEn] = useState('');
+  const [ownerDeptId, setOwnerDeptId] = useState('');
   const [snEnabled, setSnEnabled] = useState(false);
   const [units, setUnits] = useState<UnitState[]>([
     { code: 'PCS', label: 'Piece', perBase: 1, perPrev: 1 },
@@ -52,7 +60,7 @@ export default function InventoryV2Item() {
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!canInventory) return;
+    if (!canManage) return;
     if (!isEdit || !id) return;
     const load = async () => {
       setBusy(true);
@@ -69,6 +77,7 @@ export default function InventoryV2Item() {
         setNameEn(data.nameEn || '');
         setDescriptionAr(data.descriptionAr || '');
         setDescriptionEn(data.descriptionEn || '');
+        setOwnerDeptId(data.ownerDeptId || '');
         setSnEnabled(!!data.snEnabled);
         const loaded = Array.isArray(data.units) && data.units.length ? data.units : [{ code: 'PCS', label: 'Piece', perBase: 1 }];
         const normalized: UnitState[] = [];
@@ -89,12 +98,18 @@ export default function InventoryV2Item() {
       }
     };
     load();
-  }, [canInventory, db, id, isEdit]);
+  }, [canManage, db, id, isEdit]);
+
+  useEffect(() => {
+    if (ownerDeptId) return;
+    if (!deptOptions.length) return;
+    setOwnerDeptId(deptOptions[0]);
+  }, [deptOptions.join('|')]);
 
   const usedUnitCodes = useMemo(() => new Set(units.map((u) => u.code)), [units]);
   const availableUnits = UNIT_OPTIONS.filter((u) => !usedUnitCodes.has(u.code));
 
-  if (!canInventory) {
+  if (!canManage) {
     return <div className="card p-4">Access denied.</div>;
   }
 
@@ -150,6 +165,10 @@ export default function InventoryV2Item() {
     const cleanCode = itemCode.trim().toUpperCase();
     if (!cleanCode) return setError('Item code is required.');
     if (!nameEn.trim()) return setError('English name is required.');
+    if (!ownerDeptId) return setError('Department is required.');
+    if (!isAdmin && !myDepts.includes(ownerDeptId)) {
+      return setError('Department must be one of your departments.');
+    }
     if (!units.length) return setError('At least one unit is required.');
     if (units[0].perBase !== 1) {
       return setError('Base unit must have a value of 1.');
@@ -173,6 +192,7 @@ export default function InventoryV2Item() {
         nameEn: nameEn.trim(),
         descriptionAr: descriptionAr.trim(),
         descriptionEn: descriptionEn.trim(),
+        ownerDeptId,
         snEnabled: !!snEnabled,
         units: units.map((u) => ({ code: u.code, label: u.label, perBase: Number(u.perBase) || 1 })),
         updatedAt: serverTimestamp(),
@@ -233,6 +253,19 @@ export default function InventoryV2Item() {
               onChange={(e) => setItemCode(e.target.value)}
               disabled={isEdit}
             />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Department</label>
+            <select
+              className="input w-full"
+              value={ownerDeptId}
+              onChange={(e) => setOwnerDeptId(e.target.value)}
+            >
+              <option value="">Select department</option>
+              {deptOptions.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Serial number (SN)</label>
