@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom';
 import { PackagePlus, PlusCircle, Layers } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
 
 type CardProps = {
   title: string;
@@ -22,13 +21,7 @@ function ActionCard({ title, Icon, onClick }: CardProps) {
 }
 
 export default function InventoryV2() {
-  const { role } = useAuth();
   const nav = useNavigate();
-  const canInventory = !!role?.roles?.storeOfficer || !!role?.roles?.admin;
-
-  if (!canInventory) {
-    return <div className="card p-4">Access denied.</div>;
-  }
 
   return (
     <div className="space-y-4">

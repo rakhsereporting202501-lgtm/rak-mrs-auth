@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, getFirestore, onSnapshot, query as fsQuery, where } from 'firebase/firestore';
+import { collection, getFirestore, onSnapshot } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
 import { initFirebase } from '../lib/firebase';
 import type { ItemUnit } from '../lib/inventoryV2Units';
 
@@ -20,19 +19,12 @@ type InventoryV2Item = {
 };
 
 export default function InventoryV2Create() {
-  const { role } = useAuth();
   const nav = useNavigate();
-  const isAdmin = !!role?.roles?.admin;
-  const canManage = isAdmin || !!role?.roles?.storeOfficer;
-  const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
-  const [deptItems, setDeptItems] = useState<InventoryV2Item[]>([]);
-  const [legacyDeptItems, setLegacyDeptItems] = useState<InventoryV2Item[]>([]);
-  const [legacyUnassignedItems, setLegacyUnassignedItems] = useState<InventoryV2Item[]>([]);
+  const [items, setItems] = useState<InventoryV2Item[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    if (!canManage) return;
     const { app } = initFirebase();
     const db = getFirestore(app);
     const baseRef = collection(db, 'inventoryV2_items');
@@ -58,61 +50,28 @@ export default function InventoryV2Create() {
       setLoadError(`Inventory V2 read blocked (${label}): ${err?.code || 'unknown'}`);
     };
 
-    if (isAdmin) {
-      unsubs.push(onSnapshot(baseRef, (snap) => {
-        setLoadError(null);
-        setDeptItems(mapSnapshot(snap));
-      }, onError('all')));
-      setLegacyDeptItems([]);
-      setLegacyUnassignedItems([]);
-    } else {
-      if (myDepts.length) {
-        const deptRef = fsQuery(baseRef, where('ownerDeptIds', 'array-contains-any', myDepts.slice(0, 10)));
-        unsubs.push(onSnapshot(deptRef, (snap) => {
-          setLoadError(null);
-          setDeptItems(mapSnapshot(snap));
-        }, onError('deptIds')));
-        const legacyDeptRef = fsQuery(baseRef, where('ownerDeptId', 'in', myDepts.slice(0, 10)));
-        unsubs.push(onSnapshot(legacyDeptRef, (snap) => {
-          setLoadError(null);
-          setLegacyDeptItems(mapSnapshot(snap));
-        }, onError('legacyDept')));
-      } else {
-        setDeptItems([]);
-        setLegacyDeptItems([]);
-      }
-      const legacyUnassignedRef = fsQuery(baseRef, where('ownerDeptId', '==', null));
-      unsubs.push(onSnapshot(legacyUnassignedRef, (snap) => {
-        setLoadError(null);
-        setLegacyUnassignedItems(mapSnapshot(snap));
-      }, onError('legacyNull')));
-    }
+    unsubs.push(onSnapshot(baseRef, (snap) => {
+      setLoadError(null);
+      setItems(mapSnapshot(snap));
+    }, onError('all')));
 
     return () => unsubs.forEach((unsub) => unsub());
-  }, [canManage, isAdmin, myDepts.join('|')]);
+  }, []);
 
-  const items = useMemo(() => {
-    const merged = new Map<string, InventoryV2Item>();
-    [
-      ...deptItems,
-      ...legacyDeptItems,
-      ...legacyUnassignedItems,
-    ].forEach((item) => {
-      merged.set(item.id, item);
-    });
-    const list = Array.from(merged.values());
+  const sortedItems = useMemo(() => {
+    const list = [...items];
     list.sort((a, b) => {
       const aTime = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
       const bTime = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : (b.updatedAt ? new Date(b.updatedAt).getTime() : 0);
       return bTime - aTime;
     });
     return list;
-  }, [deptItems, legacyDeptItems, legacyUnassignedItems]);
+  }, [items]);
 
   const filtered = useMemo(() => {
     const tokens = search.toLowerCase().split(/\s+/).map((t) => t.trim()).filter(Boolean);
-    if (!tokens.length) return items;
-    return items.filter((item) => {
+    if (!tokens.length) return sortedItems;
+    return sortedItems.filter((item) => {
       const units = (item.units || []).map((u) => `${u.code} ${u.label}`).join(' ').toLowerCase();
       const hay = [
         item.itemCode,
@@ -122,11 +81,7 @@ export default function InventoryV2Create() {
       ].join(' ').toLowerCase();
       return tokens.every((t) => hay.includes(t));
     });
-  }, [items, search]);
-
-  if (!canManage) {
-    return <div className="card p-4">Access denied.</div>;
-  }
+  }, [sortedItems, search]);
 
   return (
     <div className="space-y-4">

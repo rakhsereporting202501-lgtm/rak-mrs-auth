@@ -447,41 +447,9 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin() || isStoreOfficer();
     }
 
-    /* Inventory V2 items */
+    /* Inventory V2 items (temporary open access) */
     match /inventoryV2_items/{id} {
-      allow read: if signedIn()
-        && (
-             isAdmin()
-             || (
-                  isStoreOfficer()
-                  && (
-                       invUnassigned(resource.data)
-                       || invMatchesUser(resource.data)
-                     )
-                )
-           );
-      allow create: if isAdmin()
-        || (
-             isStoreOfficer()
-             && invRequestAllowed()
-           );
-      allow update: if isAdmin()
-        || (
-             isStoreOfficer()
-             && (
-                  invUnassigned(resource.data)
-                  || invMatchesUser(resource.data)
-                )
-             && invRequestAllowed()
-           );
-      allow delete: if isAdmin()
-        || (
-             isStoreOfficer()
-             && (
-                  invUnassigned(resource.data)
-                  || invMatchesUser(resource.data)
-                )
-           );
+      allow read, create, update, delete: if signedIn();
     }
 
     /* RQ counters */

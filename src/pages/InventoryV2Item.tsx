@@ -38,14 +38,11 @@ export default function InventoryV2Item() {
   const isEdit = !!id && id !== 'new';
   const { app } = initFirebase();
   const db = getFirestore(app);
-  const isAdmin = !!role?.roles?.admin;
-  const canManage = isAdmin || !!role?.roles?.storeOfficer;
   const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
   const defaultDepts = ['HSE', 'TRP', 'VRP', 'Store'];
   const deptOptions = useMemo(() => {
-    if (isAdmin) return Array.from(new Set([...defaultDepts, ...myDepts]));
-    return myDepts;
-  }, [isAdmin, myDepts.join('|')]);
+    return Array.from(new Set([...defaultDepts, ...myDepts]));
+  }, [myDepts.join('|')]);
   const deptChoices = useMemo(() => ['ALL', ...deptOptions.filter((d) => d !== 'ALL')], [deptOptions.join('|')]);
 
   const [itemCode, setItemCode] = useState('');
@@ -63,7 +60,6 @@ export default function InventoryV2Item() {
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!canManage) return;
     if (!isEdit || !id) return;
     const load = async () => {
       setBusy(true);
@@ -104,22 +100,16 @@ export default function InventoryV2Item() {
       }
     };
     load();
-  }, [canManage, db, id, isEdit]);
+  }, [db, id, isEdit]);
 
   useEffect(() => {
     if (ownerDeptIds.length) return;
     if (!deptOptions.length) return;
-    if (!isAdmin) {
-      setOwnerDeptIds([deptOptions[0]]);
-    }
-  }, [deptOptions.join('|'), isAdmin, ownerDeptIds.length]);
+    setOwnerDeptIds([deptOptions[0]]);
+  }, [deptOptions.join('|'), ownerDeptIds.length]);
 
   const usedUnitCodes = useMemo(() => new Set(units.map((u) => u.code)), [units]);
   const availableUnits = UNIT_OPTIONS.filter((u) => !usedUnitCodes.has(u.code));
-
-  if (!canManage) {
-    return <div className="card p-4">Access denied.</div>;
-  }
 
   const recalcFrom = (list: UnitState[], startIdx: number) => {
     const next = list.map((u) => ({ ...u }));
@@ -170,17 +160,10 @@ export default function InventoryV2Item() {
   const onSave = async () => {
     setError(null);
     setSuccess(null);
-    if (!canManage) {
-      setError('Permission denied. Store Officer role is required.');
-      return;
-    }
     const cleanCode = itemCode.trim().toUpperCase();
     if (!cleanCode) return setError('Item code is required.');
     if (!nameEn.trim()) return setError('English name is required.');
     if (ownerDeptIds.length === 0) return setError('Select at least one department.');
-    if (!ownerDeptIds.includes('ALL') && !isAdmin && ownerDeptIds.some((dept) => !myDepts.includes(dept))) {
-      return setError('Departments must be within your departments.');
-    }
     if (!units.length) return setError('At least one unit is required.');
     if (units[0].perBase !== 1) {
       return setError('Base unit must have a value of 1.');
@@ -215,7 +198,6 @@ export default function InventoryV2Item() {
       };
       console.info('Inventory V2 save payload', {
         uid: user?.uid,
-        isAdmin,
         isStoreOfficer: !!role?.roles?.storeOfficer,
         ownerDeptIds: payload.ownerDeptIds,
       });
@@ -239,7 +221,7 @@ export default function InventoryV2Item() {
       }
     } catch (err: any) {
       if (err?.code === 'permission-denied') {
-        setError('Permission denied. Check Store Officer role and department access.');
+        setError('Permission denied.');
       } else {
         setError(err?.message || 'Failed to save item.');
       }
@@ -257,7 +239,7 @@ export default function InventoryV2Item() {
       nav('/inventory-v2/create');
     } catch (err: any) {
       if (err?.code === 'permission-denied') {
-        setError('Permission denied. Check Store Officer role and department access.');
+        setError('Permission denied.');
       } else {
         setError(err?.message || 'Failed to delete item.');
       }
