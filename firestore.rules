@@ -54,10 +54,10 @@ service cloud.firestore {
 
     function invUnassigned(data) {
       return data == null
-        || data.ownerDeptIds == null
-        || (data.ownerDeptIds != null && data.ownerDeptIds.size() == 0)
-        || data.ownerDeptId == null
-        || data.ownerDeptId == '';
+        || (
+             (data.ownerDeptIds == null || data.ownerDeptIds.size() == 0)
+             && (data.ownerDeptId == null || data.ownerDeptId == '')
+           );
     }
 
     function invMatchesUser(data) {

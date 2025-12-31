@@ -27,9 +27,9 @@ export default function InventoryV2Create() {
   const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
   const [deptItems, setDeptItems] = useState<InventoryV2Item[]>([]);
   const [legacyDeptItems, setLegacyDeptItems] = useState<InventoryV2Item[]>([]);
-  const [unassignedItems, setUnassignedItems] = useState<InventoryV2Item[]>([]);
   const [legacyUnassignedItems, setLegacyUnassignedItems] = useState<InventoryV2Item[]>([]);
   const [legacyEmptyItems, setLegacyEmptyItems] = useState<InventoryV2Item[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -54,28 +54,45 @@ export default function InventoryV2Create() {
     });
     const unsubs: Array<() => void> = [];
 
+    const onError = (label: string) => (err: any) => {
+      console.error(`Inventory V2 listen failed (${label})`, err);
+      setLoadError(`Inventory V2 read blocked (${label}): ${err?.code || 'unknown'}`);
+    };
+
     if (isAdmin) {
-      unsubs.push(onSnapshot(baseRef, (snap) => setDeptItems(mapSnapshot(snap))));
+      unsubs.push(onSnapshot(baseRef, (snap) => {
+        setLoadError(null);
+        setDeptItems(mapSnapshot(snap));
+      }, onError('all')));
       setLegacyDeptItems([]);
-      setUnassignedItems([]);
       setLegacyUnassignedItems([]);
       setLegacyEmptyItems([]);
     } else {
       if (myDepts.length) {
         const deptRef = fsQuery(baseRef, where('ownerDeptIds', 'array-contains-any', myDepts.slice(0, 10)));
-        unsubs.push(onSnapshot(deptRef, (snap) => setDeptItems(mapSnapshot(snap))));
+        unsubs.push(onSnapshot(deptRef, (snap) => {
+          setLoadError(null);
+          setDeptItems(mapSnapshot(snap));
+        }, onError('deptIds')));
         const legacyDeptRef = fsQuery(baseRef, where('ownerDeptId', 'in', myDepts.slice(0, 10)));
-        unsubs.push(onSnapshot(legacyDeptRef, (snap) => setLegacyDeptItems(mapSnapshot(snap))));
+        unsubs.push(onSnapshot(legacyDeptRef, (snap) => {
+          setLoadError(null);
+          setLegacyDeptItems(mapSnapshot(snap));
+        }, onError('legacyDept')));
       } else {
         setDeptItems([]);
         setLegacyDeptItems([]);
       }
-      const unassignedRef = fsQuery(baseRef, where('ownerDeptIds', '==', null));
-      unsubs.push(onSnapshot(unassignedRef, (snap) => setUnassignedItems(mapSnapshot(snap))));
       const legacyUnassignedRef = fsQuery(baseRef, where('ownerDeptId', '==', null));
-      unsubs.push(onSnapshot(legacyUnassignedRef, (snap) => setLegacyUnassignedItems(mapSnapshot(snap))));
+      unsubs.push(onSnapshot(legacyUnassignedRef, (snap) => {
+        setLoadError(null);
+        setLegacyUnassignedItems(mapSnapshot(snap));
+      }, onError('legacyNull')));
       const legacyEmptyRef = fsQuery(baseRef, where('ownerDeptId', '==', ''));
-      unsubs.push(onSnapshot(legacyEmptyRef, (snap) => setLegacyEmptyItems(mapSnapshot(snap))));
+      unsubs.push(onSnapshot(legacyEmptyRef, (snap) => {
+        setLoadError(null);
+        setLegacyEmptyItems(mapSnapshot(snap));
+      }, onError('legacyEmpty')));
     }
 
     return () => unsubs.forEach((unsub) => unsub());
@@ -86,7 +103,6 @@ export default function InventoryV2Create() {
     [
       ...deptItems,
       ...legacyDeptItems,
-      ...unassignedItems,
       ...legacyUnassignedItems,
       ...legacyEmptyItems,
     ].forEach((item) => {
@@ -99,7 +115,7 @@ export default function InventoryV2Create() {
       return bTime - aTime;
     });
     return list;
-  }, [deptItems, legacyDeptItems, unassignedItems, legacyUnassignedItems, legacyEmptyItems]);
+  }, [deptItems, legacyDeptItems, legacyUnassignedItems, legacyEmptyItems]);
 
   const filtered = useMemo(() => {
     const tokens = search.toLowerCase().split(/\s+/).map((t) => t.trim()).filter(Boolean);
@@ -123,6 +139,7 @@ export default function InventoryV2Create() {
   return (
     <div className="space-y-4">
       <div className="text-xl font-semibold">Inventory V2 - Create</div>
+      {loadError && <div className="text-sm text-red-600">{loadError}</div>}
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
         <input
