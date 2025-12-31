@@ -18,14 +18,6 @@ type InventoryV2Item = {
   updatedAt?: any;
 };
 
-function formatDate(value: any) {
-  if (!value) return '-';
-  if (typeof value === 'number') return new Date(value).toLocaleString();
-  if (typeof value === 'string') return new Date(value).toLocaleString();
-  if (value?.toDate) return value.toDate().toLocaleString();
-  return '-';
-}
-
 export default function InventoryV2Create() {
   const { role } = useAuth();
   const nav = useNavigate();
@@ -108,25 +100,32 @@ export default function InventoryV2Create() {
 
         {filtered.map((item) => {
           const baseUnit = item.units && item.units.length ? item.units[0].code : '-';
-          const unitSummary = item.units && item.units.length
-            ? item.units.map((u) => u.code).join(', ')
-            : '-';
+          const conversions = item.units && item.units.length > 1
+            ? item.units.slice(1).map((u) => `1 ${baseUnit} = ${u.perBase} ${u.code}`)
+            : [];
           return (
             <button
               key={item.id}
               type="button"
-              className="card h-36 p-3 text-left hover:shadow-md flex flex-col justify-between"
+              className="card h-40 p-4 text-left hover:shadow-md flex flex-col justify-between"
               onClick={() => nav(`/inventory-v2/create/${item.id}`)}
             >
-              <div>
-                <div className="text-sm font-semibold truncate">{item.nameEn || item.itemCode}</div>
-                <div className="text-xs text-gray-500">{item.descriptionEn || '-'}</div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs text-gray-400">{item.itemCode}</div>
+                  <div className="text-sm font-semibold truncate">{item.nameEn || item.itemCode}</div>
+                  <div className="text-xs text-gray-500">{item.descriptionEn || '-'}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-semibold text-blue-700">{item.stockBaseQty}</div>
+                  <div className="text-[11px] text-gray-400">{baseUnit}</div>
+                </div>
               </div>
-              <div className="text-xs text-gray-500">
-                <div>Units: {unitSummary}</div>
-                <div>Stock: {item.stockBaseQty} {baseUnit}</div>
-                <div>Updated: {formatDate(item.updatedAt)}</div>
-              </div>
+              {conversions.length > 0 && (
+                <div className="text-[11px] text-gray-500 mt-2">
+                  {conversions.join('  •  ')}
+                </div>
+              )}
             </button>
           );
         })}
