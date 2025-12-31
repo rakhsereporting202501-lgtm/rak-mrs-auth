@@ -19,6 +19,7 @@ type ItemDoc = {
   descriptionAr?: string;
   descriptionEn?: string;
   ownerDeptId?: string;
+  ownerDeptIds?: string[];
   snEnabled?: boolean;
   units?: ItemUnit[];
   stockBaseQty?: number;
@@ -38,7 +39,7 @@ export default function InventoryV2Item() {
   const { app } = initFirebase();
   const db = getFirestore(app);
   const isAdmin = !!role?.roles?.admin;
-  const canManage = isAdmin || (!!role?.roles?.deptManager && !!role?.roles?.storeOfficer);
+  const canManage = isAdmin || !!role?.roles?.storeOfficer;
   const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
   const defaultDepts = ['HSE', 'TRP', 'VRP', 'Store'];
   const deptOptions = useMemo(() => {
@@ -51,7 +52,7 @@ export default function InventoryV2Item() {
   const [nameEn, setNameEn] = useState('');
   const [descriptionAr, setDescriptionAr] = useState('');
   const [descriptionEn, setDescriptionEn] = useState('');
-  const [ownerDeptId, setOwnerDeptId] = useState('');
+  const [ownerDeptIds, setOwnerDeptIds] = useState<string[]>([]);
   const [snEnabled, setSnEnabled] = useState(false);
   const [units, setUnits] = useState<UnitState[]>([
     { code: 'PCS', label: 'Piece', perBase: 1, perPrev: 1 },
@@ -78,7 +79,10 @@ export default function InventoryV2Item() {
         setNameEn(data.nameEn || '');
         setDescriptionAr(data.descriptionAr || '');
         setDescriptionEn(data.descriptionEn || '');
-        setOwnerDeptId(data.ownerDeptId || '');
+        const deptIds = Array.isArray(data.ownerDeptIds) && data.ownerDeptIds.length
+          ? data.ownerDeptIds
+          : (data.ownerDeptId ? [data.ownerDeptId] : []);
+        setOwnerDeptIds(deptIds);
         setSnEnabled(!!data.snEnabled);
         const loaded = Array.isArray(data.units) && data.units.length ? data.units : [{ code: 'PCS', label: 'Piece', perBase: 1 }];
         const normalized: UnitState[] = [];
@@ -102,10 +106,12 @@ export default function InventoryV2Item() {
   }, [canManage, db, id, isEdit]);
 
   useEffect(() => {
-    if (ownerDeptId) return;
+    if (ownerDeptIds.length) return;
     if (!deptOptions.length) return;
-    setOwnerDeptId(deptOptions[0]);
-  }, [deptOptions.join('|')]);
+    if (!isAdmin) {
+      setOwnerDeptIds([deptOptions[0]]);
+    }
+  }, [deptOptions.join('|'), isAdmin, ownerDeptIds.length]);
 
   const usedUnitCodes = useMemo(() => new Set(units.map((u) => u.code)), [units]);
   const availableUnits = UNIT_OPTIONS.filter((u) => !usedUnitCodes.has(u.code));
@@ -166,9 +172,9 @@ export default function InventoryV2Item() {
     const cleanCode = itemCode.trim().toUpperCase();
     if (!cleanCode) return setError('Item code is required.');
     if (!nameEn.trim()) return setError('English name is required.');
-    if (!ownerDeptId) return setError('Department is required.');
-    if (!isAdmin && !myDepts.includes(ownerDeptId)) {
-      return setError('Department must be one of your departments.');
+    if (!isAdmin && ownerDeptIds.length === 0) return setError('Department is required.');
+    if (!isAdmin && ownerDeptIds.some((dept) => !myDepts.includes(dept))) {
+      return setError('Departments must be within your departments.');
     }
     if (!units.length) return setError('At least one unit is required.');
     if (units[0].perBase !== 1) {
@@ -187,13 +193,15 @@ export default function InventoryV2Item() {
           return;
         }
       }
+      const cleanedDeptIds = ownerDeptIds.filter(Boolean);
       const payload = {
         itemCode: cleanCode,
         nameAr: nameAr.trim(),
         nameEn: nameEn.trim(),
         descriptionAr: descriptionAr.trim(),
         descriptionEn: descriptionEn.trim(),
-        ownerDeptId,
+        ownerDeptIds: cleanedDeptIds.length ? cleanedDeptIds : null,
+        ownerDeptId: cleanedDeptIds[0] || null,
         snEnabled: !!snEnabled,
         units: units.map((u) => ({ code: u.code, label: u.label, perBase: Number(u.perBase) || 1 })),
         updatedAt: serverTimestamp(),
@@ -256,19 +264,6 @@ export default function InventoryV2Item() {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Department</label>
-            <select
-              className="input w-full"
-              value={ownerDeptId}
-              onChange={(e) => setOwnerDeptId(e.target.value)}
-            >
-              <option value="">Select department</option>
-              {deptOptions.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
-          <div>
             <label className="block text-xs text-gray-500 mb-1">Serial number (SN)</label>
             <button
               type="button"
@@ -294,6 +289,22 @@ export default function InventoryV2Item() {
             <label className="block text-xs text-gray-500 mb-1">Description (Arabic)</label>
             <textarea className="input w-full min-h-[90px]" value={descriptionAr} onChange={(e) => setDescriptionAr(e.target.value)} />
           </div>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Departments</label>
+          <select
+            className="input w-full h-28"
+            multiple
+            value={ownerDeptIds}
+            onChange={(e) => {
+              const selected = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+              setOwnerDeptIds(selected);
+            }}
+          >
+            {deptOptions.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
         </div>
 
         <div className="space-y-2">

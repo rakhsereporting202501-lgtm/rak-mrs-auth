@@ -23,11 +23,13 @@ export default function InventoryV2Create() {
   const { role } = useAuth();
   const nav = useNavigate();
   const isAdmin = !!role?.roles?.admin;
-  const canManage = isAdmin || (!!role?.roles?.deptManager && !!role?.roles?.storeOfficer);
+  const canManage = isAdmin || !!role?.roles?.storeOfficer;
   const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
   const [deptItems, setDeptItems] = useState<InventoryV2Item[]>([]);
+  const [legacyDeptItems, setLegacyDeptItems] = useState<InventoryV2Item[]>([]);
   const [unassignedItems, setUnassignedItems] = useState<InventoryV2Item[]>([]);
-  const [emptyDeptItems, setEmptyDeptItems] = useState<InventoryV2Item[]>([]);
+  const [legacyUnassignedItems, setLegacyUnassignedItems] = useState<InventoryV2Item[]>([]);
+  const [legacyEmptyItems, setLegacyEmptyItems] = useState<InventoryV2Item[]>([]);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -54,19 +56,26 @@ export default function InventoryV2Create() {
 
     if (isAdmin) {
       unsubs.push(onSnapshot(baseRef, (snap) => setDeptItems(mapSnapshot(snap))));
+      setLegacyDeptItems([]);
       setUnassignedItems([]);
-      setEmptyDeptItems([]);
+      setLegacyUnassignedItems([]);
+      setLegacyEmptyItems([]);
     } else {
       if (myDepts.length) {
-        const deptRef = fsQuery(baseRef, where('ownerDeptId', 'in', myDepts.slice(0, 10)));
+        const deptRef = fsQuery(baseRef, where('ownerDeptIds', 'array-contains-any', myDepts.slice(0, 10)));
         unsubs.push(onSnapshot(deptRef, (snap) => setDeptItems(mapSnapshot(snap))));
+        const legacyDeptRef = fsQuery(baseRef, where('ownerDeptId', 'in', myDepts.slice(0, 10)));
+        unsubs.push(onSnapshot(legacyDeptRef, (snap) => setLegacyDeptItems(mapSnapshot(snap))));
       } else {
         setDeptItems([]);
+        setLegacyDeptItems([]);
       }
-      const unassignedRef = fsQuery(baseRef, where('ownerDeptId', '==', null));
+      const unassignedRef = fsQuery(baseRef, where('ownerDeptIds', '==', null));
       unsubs.push(onSnapshot(unassignedRef, (snap) => setUnassignedItems(mapSnapshot(snap))));
-      const emptyRef = fsQuery(baseRef, where('ownerDeptId', '==', ''));
-      unsubs.push(onSnapshot(emptyRef, (snap) => setEmptyDeptItems(mapSnapshot(snap))));
+      const legacyUnassignedRef = fsQuery(baseRef, where('ownerDeptId', '==', null));
+      unsubs.push(onSnapshot(legacyUnassignedRef, (snap) => setLegacyUnassignedItems(mapSnapshot(snap))));
+      const legacyEmptyRef = fsQuery(baseRef, where('ownerDeptId', '==', ''));
+      unsubs.push(onSnapshot(legacyEmptyRef, (snap) => setLegacyEmptyItems(mapSnapshot(snap))));
     }
 
     return () => unsubs.forEach((unsub) => unsub());
@@ -74,7 +83,13 @@ export default function InventoryV2Create() {
 
   const items = useMemo(() => {
     const merged = new Map<string, InventoryV2Item>();
-    [...deptItems, ...unassignedItems, ...emptyDeptItems].forEach((item) => {
+    [
+      ...deptItems,
+      ...legacyDeptItems,
+      ...unassignedItems,
+      ...legacyUnassignedItems,
+      ...legacyEmptyItems,
+    ].forEach((item) => {
       merged.set(item.id, item);
     });
     const list = Array.from(merged.values());
@@ -84,7 +99,7 @@ export default function InventoryV2Create() {
       return bTime - aTime;
     });
     return list;
-  }, [deptItems, unassignedItems, emptyDeptItems]);
+  }, [deptItems, legacyDeptItems, unassignedItems, legacyUnassignedItems, legacyEmptyItems]);
 
   const filtered = useMemo(() => {
     const tokens = search.toLowerCase().split(/\s+/).map((t) => t.trim()).filter(Boolean);

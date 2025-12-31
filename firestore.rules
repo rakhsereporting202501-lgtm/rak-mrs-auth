@@ -428,24 +428,51 @@ service cloud.firestore {
       allow read: if signedIn()
         && (
              isAdmin()
-             || resource.data.ownerDeptId == null
-             || resource.data.ownerDeptId == ''
-             || inUserDepts(resource.data.ownerDeptId)
+             || (
+                  isStoreOfficer()
+                  && (
+                       resource.data.ownerDeptIds == null
+                       || resource.data.ownerDeptIds.size() == 0
+                       || resource.data.ownerDeptId == null
+                       || resource.data.ownerDeptId == ''
+                       || inUserDepts(resource.data.ownerDeptId)
+                       || (
+                            resource.data.ownerDeptIds != null
+                            && resource.data.ownerDeptIds.hasAny(userDeptIds())
+                          )
+                     )
+                )
            );
       allow create: if isAdmin()
         || (
-             isDeptManager()
-             && isStoreOfficer()
-             && request.resource.data.ownerDeptId != null
-             && inUserDepts(request.resource.data.ownerDeptId)
+             isStoreOfficer()
+             && request.resource.data.ownerDeptIds != null
+             && request.resource.data.ownerDeptIds.size() > 0
+             && request.resource.data.ownerDeptIds.hasAny(userDeptIds())
            );
-      allow update, delete: if isAdmin()
+      allow update: if isAdmin()
         || (
-             isDeptManager()
-             && isStoreOfficer()
-             && resource.data.ownerDeptId != null
-             && inUserDepts(resource.data.ownerDeptId)
-             && request.resource.data.ownerDeptId == resource.data.ownerDeptId
+             isStoreOfficer()
+             && (
+                  (
+                    resource.data.ownerDeptIds != null
+                    && resource.data.ownerDeptIds.hasAny(userDeptIds())
+                  )
+                  || inUserDepts(resource.data.ownerDeptId)
+                )
+             && request.resource.data.ownerDeptIds != null
+             && request.resource.data.ownerDeptIds.hasAny(userDeptIds())
+           );
+      allow delete: if isAdmin()
+        || (
+             isStoreOfficer()
+             && (
+                  (
+                    resource.data.ownerDeptIds != null
+                    && resource.data.ownerDeptIds.hasAny(userDeptIds())
+                  )
+                  || inUserDepts(resource.data.ownerDeptId)
+                )
            );
     }
 
