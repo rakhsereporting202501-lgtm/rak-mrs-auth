@@ -28,7 +28,6 @@ export default function InventoryV2Create() {
   const [deptItems, setDeptItems] = useState<InventoryV2Item[]>([]);
   const [legacyDeptItems, setLegacyDeptItems] = useState<InventoryV2Item[]>([]);
   const [legacyUnassignedItems, setLegacyUnassignedItems] = useState<InventoryV2Item[]>([]);
-  const [legacyEmptyItems, setLegacyEmptyItems] = useState<InventoryV2Item[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
@@ -66,7 +65,6 @@ export default function InventoryV2Create() {
       }, onError('all')));
       setLegacyDeptItems([]);
       setLegacyUnassignedItems([]);
-      setLegacyEmptyItems([]);
     } else {
       if (myDepts.length) {
         const deptRef = fsQuery(baseRef, where('ownerDeptIds', 'array-contains-any', myDepts.slice(0, 10)));
@@ -88,11 +86,6 @@ export default function InventoryV2Create() {
         setLoadError(null);
         setLegacyUnassignedItems(mapSnapshot(snap));
       }, onError('legacyNull')));
-      const legacyEmptyRef = fsQuery(baseRef, where('ownerDeptId', '==', ''));
-      unsubs.push(onSnapshot(legacyEmptyRef, (snap) => {
-        setLoadError(null);
-        setLegacyEmptyItems(mapSnapshot(snap));
-      }, onError('legacyEmpty')));
     }
 
     return () => unsubs.forEach((unsub) => unsub());
@@ -104,7 +97,6 @@ export default function InventoryV2Create() {
       ...deptItems,
       ...legacyDeptItems,
       ...legacyUnassignedItems,
-      ...legacyEmptyItems,
     ].forEach((item) => {
       merged.set(item.id, item);
     });
@@ -115,7 +107,7 @@ export default function InventoryV2Create() {
       return bTime - aTime;
     });
     return list;
-  }, [deptItems, legacyDeptItems, legacyUnassignedItems, legacyEmptyItems]);
+  }, [deptItems, legacyDeptItems, legacyUnassignedItems]);
 
   const filtered = useMemo(() => {
     const tokens = search.toLowerCase().split(/\s+/).map((t) => t.trim()).filter(Boolean);
