@@ -46,6 +46,7 @@ export default function InventoryV2Item() {
     if (isAdmin) return Array.from(new Set([...defaultDepts, ...myDepts]));
     return myDepts;
   }, [isAdmin, myDepts.join('|')]);
+  const deptChoices = useMemo(() => ['ALL', ...deptOptions.filter((d) => d !== 'ALL')], [deptOptions.join('|')]);
 
   const [itemCode, setItemCode] = useState('');
   const [nameAr, setNameAr] = useState('');
@@ -81,7 +82,7 @@ export default function InventoryV2Item() {
         setDescriptionEn(data.descriptionEn || '');
         const deptIds = Array.isArray(data.ownerDeptIds) && data.ownerDeptIds.length
           ? data.ownerDeptIds
-          : (data.ownerDeptId ? [data.ownerDeptId] : []);
+          : (data.ownerDeptId ? [data.ownerDeptId] : ['ALL']);
         setOwnerDeptIds(deptIds);
         setSnEnabled(!!data.snEnabled);
         const loaded = Array.isArray(data.units) && data.units.length ? data.units : [{ code: 'PCS', label: 'Piece', perBase: 1 }];
@@ -172,8 +173,8 @@ export default function InventoryV2Item() {
     const cleanCode = itemCode.trim().toUpperCase();
     if (!cleanCode) return setError('Item code is required.');
     if (!nameEn.trim()) return setError('English name is required.');
-    if (!isAdmin && ownerDeptIds.length === 0) return setError('Department is required.');
-    if (!isAdmin && ownerDeptIds.some((dept) => !myDepts.includes(dept))) {
+    if (ownerDeptIds.length === 0) return setError('Select at least one department.');
+    if (!ownerDeptIds.includes('ALL') && !isAdmin && ownerDeptIds.some((dept) => !myDepts.includes(dept))) {
       return setError('Departments must be within your departments.');
     }
     if (!units.length) return setError('At least one unit is required.');
@@ -193,7 +194,9 @@ export default function InventoryV2Item() {
           return;
         }
       }
-      const cleanedDeptIds = ownerDeptIds.filter(Boolean);
+      const cleanedDeptIds = ownerDeptIds.includes('ALL')
+        ? []
+        : ownerDeptIds.filter((dept) => dept && dept !== 'ALL');
       const payload = {
         itemCode: cleanCode,
         nameAr: nameAr.trim(),
@@ -292,19 +295,39 @@ export default function InventoryV2Item() {
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">Departments</label>
-          <select
-            className="input w-full h-28"
-            multiple
-            value={ownerDeptIds}
-            onChange={(e) => {
-              const selected = Array.from(e.target.selectedOptions).map((opt) => opt.value);
-              setOwnerDeptIds(selected);
-            }}
-          >
-            {deptOptions.map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {deptChoices.map((dept) => {
+              const checked = ownerDeptIds.includes(dept);
+              return (
+                <label
+                  key={dept}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                    checked ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-700'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-blue-600"
+                    checked={checked}
+                    onChange={() => {
+                      setOwnerDeptIds((prev) => {
+                        if (dept === 'ALL') {
+                          return prev.includes('ALL') ? prev : ['ALL'];
+                        }
+                        const next = prev.filter((d) => d !== 'ALL');
+                        if (next.includes(dept)) {
+                          const reduced = next.filter((d) => d !== dept);
+                          return reduced.length ? reduced : next;
+                        }
+                        return [...next, dept];
+                      });
+                    }}
+                  />
+                  <span>{dept === 'ALL' ? 'All' : dept}</span>
+                </label>
+              );
+            })}
+          </div>
         </div>
 
         <div className="space-y-2">

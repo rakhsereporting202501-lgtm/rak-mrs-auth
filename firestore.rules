@@ -446,9 +446,11 @@ service cloud.firestore {
       allow create: if isAdmin()
         || (
              isStoreOfficer()
-             && request.resource.data.ownerDeptIds != null
-             && request.resource.data.ownerDeptIds.size() > 0
-             && request.resource.data.ownerDeptIds.hasAny(userDeptIds())
+             && (
+                  request.resource.data.ownerDeptIds == null
+                  || request.resource.data.ownerDeptIds.size() == 0
+                  || request.resource.data.ownerDeptIds.hasOnly(userDeptIds())
+                )
            );
       allow update: if isAdmin()
         || (
@@ -460,8 +462,11 @@ service cloud.firestore {
                   )
                   || inUserDepts(resource.data.ownerDeptId)
                 )
-             && request.resource.data.ownerDeptIds != null
-             && request.resource.data.ownerDeptIds.hasAny(userDeptIds())
+             && (
+                  request.resource.data.ownerDeptIds == null
+                  || request.resource.data.ownerDeptIds.size() == 0
+                  || request.resource.data.ownerDeptIds.hasOnly(userDeptIds())
+                )
            );
       allow delete: if isAdmin()
         || (
