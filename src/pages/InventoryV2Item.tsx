@@ -4,9 +4,11 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   getFirestore,
   serverTimestamp,
   setDoc,
+  collection,
 } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { initFirebase } from '../lib/firebase';
@@ -38,11 +40,24 @@ export default function InventoryV2Item() {
   const isEdit = !!id && id !== 'new';
   const { app } = initFirebase();
   const db = getFirestore(app);
+  const isAdmin = !!role?.roles?.admin;
+  const isStoreOfficer = !!role?.roles?.storeOfficer;
+  const inStoreDept = (role?.departmentIds || []).includes('Store' as any);
+  const canInventory = isAdmin || isStoreOfficer || inStoreDept;
+  const canSeeAllDepts = isAdmin || inStoreDept;
   const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
   const defaultDepts = ['HSE', 'TRP', 'VRP', 'Store'];
+  const [allDeptOptions, setAllDeptOptions] = useState<string[]>([]);
+  const [deptLoadError, setDeptLoadError] = useState<string | null>(null);
   const deptOptions = useMemo(() => {
-    return Array.from(new Set([...defaultDepts, ...myDepts]));
-  }, [myDepts.join('|')]);
+    if (canSeeAllDepts && allDeptOptions.length) {
+      return Array.from(new Set([...defaultDepts, ...allDeptOptions]));
+    }
+    if (canSeeAllDepts) {
+      return Array.from(new Set([...defaultDepts, ...myDepts]));
+    }
+    return myDepts;
+  }, [canSeeAllDepts, allDeptOptions.join('|'), myDepts.join('|')]);
   const deptChoices = useMemo(() => ['ALL', ...deptOptions.filter((d) => d !== 'ALL')], [deptOptions.join('|')]);
 
   const [itemCode, setItemCode] = useState('');
@@ -60,6 +75,38 @@ export default function InventoryV2Item() {
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!canSeeAllDepts) return;
+    let active = true;
+    const loadDepts = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'roles'));
+        const found = new Set<string>();
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (Array.isArray(data.departmentIds)) {
+            data.departmentIds.forEach((dept: any) => {
+              const value = (dept || '').toString().trim();
+              if (value) found.add(value);
+            });
+          }
+        });
+        if (active) {
+          setDeptLoadError(null);
+          setAllDeptOptions(Array.from(found.values()));
+        }
+      } catch (err: any) {
+        console.error('Inventory V2 department load failed', err);
+        if (active) setDeptLoadError('Failed to load departments.');
+      }
+    };
+    loadDepts();
+    return () => {
+      active = false;
+    };
+  }, [canSeeAllDepts, db]);
+
+  useEffect(() => {
+    if (!canInventory) return;
     if (!isEdit || !id) return;
     const load = async () => {
       setBusy(true);
@@ -100,16 +147,27 @@ export default function InventoryV2Item() {
       }
     };
     load();
-  }, [db, id, isEdit]);
+  }, [canInventory, db, id, isEdit]);
 
   useEffect(() => {
     if (ownerDeptIds.length) return;
-    if (!deptOptions.length) return;
-    setOwnerDeptIds([deptOptions[0]]);
-  }, [deptOptions.join('|'), ownerDeptIds.length]);
+    if (canSeeAllDepts) {
+      setOwnerDeptIds(['ALL']);
+      return;
+    }
+    if (deptOptions.length) {
+      setOwnerDeptIds([deptOptions[0]]);
+      return;
+    }
+    setOwnerDeptIds(['ALL']);
+  }, [canSeeAllDepts, deptOptions.join('|'), ownerDeptIds.length]);
 
   const usedUnitCodes = useMemo(() => new Set(units.map((u) => u.code)), [units]);
   const availableUnits = UNIT_OPTIONS.filter((u) => !usedUnitCodes.has(u.code));
+
+  if (!canInventory) {
+    return <div className="card p-4">Access denied.</div>;
+  }
 
   const recalcFrom = (list: UnitState[], startIdx: number) => {
     const next = list.map((u) => ({ ...u }));
@@ -160,10 +218,17 @@ export default function InventoryV2Item() {
   const onSave = async () => {
     setError(null);
     setSuccess(null);
+    if (!canInventory) {
+      setError('Access denied.');
+      return;
+    }
     const cleanCode = itemCode.trim().toUpperCase();
     if (!cleanCode) return setError('Item code is required.');
     if (!nameEn.trim()) return setError('English name is required.');
     if (ownerDeptIds.length === 0) return setError('Select at least one department.');
+    if (!ownerDeptIds.includes('ALL') && !canSeeAllDepts && ownerDeptIds.some((dept) => !myDepts.includes(dept))) {
+      return setError('Departments must be within your departments.');
+    }
     if (!units.length) return setError('At least one unit is required.');
     if (units[0].perBase !== 1) {
       return setError('Base unit must have a value of 1.');
@@ -295,6 +360,7 @@ export default function InventoryV2Item() {
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">Departments</label>
+          {deptLoadError && <div className="text-xs text-red-600 mb-2">{deptLoadError}</div>}
           <div className="grid gap-2 sm:grid-cols-3">
             {deptChoices.map((dept) => {
               const checked = ownerDeptIds.includes(dept);

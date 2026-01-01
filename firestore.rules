@@ -54,6 +54,11 @@ service cloud.firestore {
 
     function invUnassigned(data) {
       return data == null
+        || data.ownerDeptId == 'ALL'
+        || (
+             data.ownerDeptIds != null
+             && data.ownerDeptIds.hasAny(['ALL'])
+           )
         || (
              (data.ownerDeptIds == null || data.ownerDeptIds.size() == 0)
              && (data.ownerDeptId == null || data.ownerDeptId == '')
@@ -71,7 +76,9 @@ service cloud.firestore {
     function invRequestAllowed() {
       return request.resource.data.ownerDeptIds == null
         || (request.resource.data.ownerDeptIds != null && request.resource.data.ownerDeptIds.size() == 0)
-        || request.resource.data.ownerDeptIds.hasOnly(userDeptIds());
+        || request.resource.data.ownerDeptIds.hasAny(['ALL'])
+        || request.resource.data.ownerDeptIds.hasOnly(userDeptIds())
+        || inUserDepts(request.resource.data.ownerDeptId);
     }
 
     /* ===== Helpers: Request document structure ===== */
@@ -427,7 +434,7 @@ service cloud.firestore {
     }
 
     match /roles/{uid} {
-      allow read: if signedIn() && (uid == request.auth.uid || isAdmin());
+      allow read: if signedIn() && (uid == request.auth.uid || isAdmin() || isStoreDeptUser());
       allow create, update, delete: if isAdmin();
     }
 
@@ -447,9 +454,54 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin() || isStoreOfficer();
     }
 
-    /* Inventory V2 items (temporary open access) */
+    /* Inventory V2 items */
     match /inventoryV2_items/{id} {
-      allow read, create, update, delete: if signedIn();
+      allow read: if signedIn()
+        && (
+             isAdmin()
+             || isStoreDeptUser()
+             || (
+                  isStoreOfficer()
+                  && (
+                       invUnassigned(resource.data)
+                       || invMatchesUser(resource.data)
+                     )
+                )
+           );
+      allow create: if signedIn()
+        && (
+             isAdmin()
+             || isStoreDeptUser()
+             || (
+                  isStoreOfficer()
+                  && invRequestAllowed()
+                )
+           );
+      allow update: if signedIn()
+        && (
+             isAdmin()
+             || isStoreDeptUser()
+             || (
+                  isStoreOfficer()
+                  && (
+                       invUnassigned(resource.data)
+                       || invMatchesUser(resource.data)
+                     )
+                  && invRequestAllowed()
+                )
+           );
+      allow delete: if signedIn()
+        && (
+             isAdmin()
+             || isStoreDeptUser()
+             || (
+                  isStoreOfficer()
+                  && (
+                       invUnassigned(resource.data)
+                       || invMatchesUser(resource.data)
+                     )
+                )
+           );
     }
 
     /* RQ counters */

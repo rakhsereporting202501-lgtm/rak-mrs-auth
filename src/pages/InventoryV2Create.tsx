@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { collection, getFirestore, onSnapshot } from 'firebase/firestore';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { collection, getFirestore, onSnapshot, query, where } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus } from 'lucide-react';
 import { initFirebase } from '../lib/firebase';
 import type { ItemUnit } from '../lib/inventoryV2Units';
+import { useAuth } from '../context/AuthContext';
 
 type InventoryV2Item = {
   id: string;
@@ -16,15 +17,25 @@ type InventoryV2Item = {
   stockBaseQty?: number;
   updatedAt?: any;
   ownerDeptId?: string;
+  ownerDeptIds?: string[];
 };
 
 export default function InventoryV2Create() {
+  const { role } = useAuth();
   const nav = useNavigate();
+  const isAdmin = !!role?.roles?.admin;
+  const isStoreOfficer = !!role?.roles?.storeOfficer;
+  const inStoreDept = (role?.departmentIds || []).includes('Store' as any);
+  const canInventory = isAdmin || isStoreOfficer || inStoreDept;
+  const canSeeAll = isAdmin || inStoreDept;
+  const myDepts = (role?.departmentIds || []).map((d) => (d || '').toString()).filter(Boolean);
   const [items, setItems] = useState<InventoryV2Item[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const queryResultsRef = useRef<Record<string, InventoryV2Item[]>>({});
 
   useEffect(() => {
+    if (!canInventory) return;
     const { app } = initFirebase();
     const db = getFirestore(app);
     const baseRef = collection(db, 'inventoryV2_items');
@@ -41,22 +52,74 @@ export default function InventoryV2Create() {
         stockBaseQty: typeof data.stockBaseQty === 'number' ? data.stockBaseQty : 0,
         updatedAt: data.updatedAt || null,
         ownerDeptId: data.ownerDeptId || null,
+        ownerDeptIds: Array.isArray(data.ownerDeptIds) ? data.ownerDeptIds : [],
       };
     });
     const unsubs: Array<() => void> = [];
+    queryResultsRef.current = {};
+
+    const mergeResults = () => {
+      const merged = new Map<string, InventoryV2Item>();
+      Object.values(queryResultsRef.current).forEach((list) => {
+        list.forEach((item) => merged.set(item.id, item));
+      });
+      setItems(Array.from(merged.values()));
+    };
 
     const onError = (label: string) => (err: any) => {
       console.error(`Inventory V2 listen failed (${label})`, err);
       setLoadError(`Inventory V2 read blocked (${label}): ${err?.code || 'unknown'}`);
     };
 
-    unsubs.push(onSnapshot(baseRef, (snap) => {
-      setLoadError(null);
-      setItems(mapSnapshot(snap));
-    }, onError('all')));
+    if (canSeeAll) {
+      unsubs.push(onSnapshot(baseRef, (snap) => {
+        setLoadError(null);
+        setItems(mapSnapshot(snap));
+      }, onError('all')));
+    } else {
+      const queries: Array<{ key: string; q: any }> = [];
+      if (myDepts.length) {
+        queries.push({
+          key: 'deptIds',
+          q: query(baseRef, where('ownerDeptIds', 'array-contains-any', myDepts)),
+        });
+        const chunkSize = 10;
+        for (let i = 0; i < myDepts.length; i += chunkSize) {
+          const chunk = myDepts.slice(i, i + chunkSize);
+          queries.push({
+            key: `deptId_${i}`,
+            q: query(baseRef, where('ownerDeptId', 'in', chunk)),
+          });
+        }
+      }
+      queries.push({
+        key: 'unassignedNull',
+        q: query(baseRef, where('ownerDeptId', '==', null), where('ownerDeptIds', '==', null)),
+      });
+      queries.push({
+        key: 'unassignedEmpty',
+        q: query(baseRef, where('ownerDeptId', '==', ''), where('ownerDeptIds', '==', null)),
+      });
+      queries.push({
+        key: 'allDeptIds',
+        q: query(baseRef, where('ownerDeptIds', 'array-contains', 'ALL')),
+      });
+      queries.push({
+        key: 'allDeptId',
+        q: query(baseRef, where('ownerDeptId', '==', 'ALL')),
+      });
+
+      queries.forEach(({ key, q }) => {
+        unsubs.push(onSnapshot(q, (snap) => {
+          setLoadError(null);
+          queryResultsRef.current[key] = mapSnapshot(snap);
+          mergeResults();
+        }, onError(key)));
+      });
+    }
 
     return () => unsubs.forEach((unsub) => unsub());
-  }, []);
+  }, [canInventory, canSeeAll, myDepts.join('|')]);
 
   const sortedItems = useMemo(() => {
     const list = [...items];
@@ -73,15 +136,24 @@ export default function InventoryV2Create() {
     if (!tokens.length) return sortedItems;
     return sortedItems.filter((item) => {
       const units = (item.units || []).map((u) => `${u.code} ${u.label}`).join(' ').toLowerCase();
+      const deptText = [
+        ...(item.ownerDeptIds || []),
+        item.ownerDeptId || '',
+      ].join(' ');
       const hay = [
         item.itemCode,
         item.nameEn,
         item.nameAr,
         units,
+        deptText,
       ].join(' ').toLowerCase();
       return tokens.every((t) => hay.includes(t));
     });
   }, [sortedItems, search]);
+
+  if (!canInventory) {
+    return <div className="card p-4">Access denied.</div>;
+  }
 
   return (
     <div className="space-y-4">
@@ -112,6 +184,9 @@ export default function InventoryV2Create() {
           const conversions = item.units && item.units.length > 1
             ? item.units.slice(1).map((u) => `1 ${u.code} = ${u.perBase} ${baseUnit}`)
             : [];
+          const deptLabel = item.ownerDeptIds && item.ownerDeptIds.length
+            ? item.ownerDeptIds.join(', ')
+            : (item.ownerDeptId || 'All');
           return (
             <button
               key={item.id}
@@ -129,11 +204,12 @@ export default function InventoryV2Create() {
                   <div className="text-[11px] text-gray-400">{baseUnit}</div>
                 </div>
               </div>
-              {conversions.length > 0 && (
-                <div className="text-[11px] text-gray-500 mt-2">
-                  {conversions.join(' | ')}
+              <div className="mt-2 flex items-end justify-between gap-2">
+                <div className="text-[11px] text-gray-500">
+                  {conversions.length > 0 ? conversions.join(' | ') : ''}
                 </div>
-              )}
+                <div className="text-[11px] text-gray-400 text-right">{deptLabel}</div>
+              </div>
             </button>
           );
         })}
