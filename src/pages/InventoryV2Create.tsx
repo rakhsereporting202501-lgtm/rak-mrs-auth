@@ -159,12 +159,17 @@ export default function InventoryV2Create() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Inventory V2 - Create</div>
+      <div className="flex items-center gap-2">
+        <button type="button" className="btn-ghost text-sm" onClick={() => nav('/inventory-v2')}>
+          Back
+        </button>
+        <div className="text-xl font-semibold">Inventory V2 - Create</div>
+      </div>
       {loadError && <div className="text-sm text-red-600">{loadError}</div>}
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+        <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
         <input
-          className="input w-full pl-14"
+          className="input w-full pl-16"
           placeholder="Search items by code, name, or unit"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -193,7 +198,7 @@ export default function InventoryV2Create() {
             <button
               key={item.id}
               type="button"
-              className="card h-40 p-4 text-left hover:shadow-md flex flex-col justify-between"
+              className="card h-36 p-4 text-left hover:shadow-md flex flex-col justify-between"
               onClick={() => nav(`/inventory-v2/create/${item.id}`)}
             >
               <div className="flex items-start justify-between gap-3">
