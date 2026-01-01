@@ -452,14 +452,7 @@ service cloud.firestore {
     }
 
     match /roles/{uid} {
-      allow read: if signedIn()
-        && (
-             uid == request.auth.uid
-             || (
-                  uid != request.auth.uid
-                  && (currentIsAdmin() || currentIsStoreDept())
-                )
-           );
+      allow read: if signedIn();
       allow create, update, delete: if currentIsAdmin();
     }
 
@@ -485,13 +478,7 @@ service cloud.firestore {
         && (
              isAdmin()
              || isStoreDeptUser()
-             || (
-                  isStoreOfficer()
-                  && (
-                       invUnassigned(resource.data)
-                       || invMatchesUser(resource.data)
-                     )
-                )
+             || isStoreOfficer()
            );
       allow create: if signedIn()
         && (
