@@ -159,11 +159,11 @@ export default function InventoryV2Create() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xl font-semibold">Inventory V2 - Create</div>
         <button type="button" className="btn-ghost text-sm" onClick={() => nav('/inventory-v2')}>
           Back
         </button>
-        <div className="text-xl font-semibold">Inventory V2 - Create</div>
       </div>
       {loadError && <div className="text-sm text-red-600">{loadError}</div>}
       <div className="relative">
