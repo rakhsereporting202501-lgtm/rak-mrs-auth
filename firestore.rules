@@ -17,6 +17,24 @@ service cloud.firestore {
         : null;
     }
 
+    function currentRole() {
+      return get(/databases/$(db)/documents/roles/$(request.auth.uid));
+    }
+
+    function currentIsAdmin() {
+      return signedIn()
+        && currentRole().exists()
+        && currentRole().data.roles != null
+        && currentRole().data.roles.admin == true;
+    }
+
+    function currentIsStoreDept() {
+      return signedIn()
+        && currentRole().exists()
+        && currentRole().data.departmentIds != null
+        && currentRole().data.departmentIds.hasAny(['Store']);
+    }
+
     function hasRole(name) {
       return roleDoc() != null
         && roleDoc().data.roles != null
@@ -434,8 +452,15 @@ service cloud.firestore {
     }
 
     match /roles/{uid} {
-      allow read: if signedIn() && (uid == request.auth.uid || isAdmin() || isStoreDeptUser());
-      allow create, update, delete: if isAdmin();
+      allow read: if signedIn()
+        && (
+             uid == request.auth.uid
+             || (
+                  uid != request.auth.uid
+                  && (currentIsAdmin() || currentIsStoreDept())
+                )
+           );
+      allow create, update, delete: if currentIsAdmin();
     }
 
     match /projects/{id} {

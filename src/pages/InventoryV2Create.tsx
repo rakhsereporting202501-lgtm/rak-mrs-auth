@@ -79,9 +79,11 @@ export default function InventoryV2Create() {
     } else {
       const queries: Array<{ key: string; q: any }> = [];
       if (myDepts.length) {
-        queries.push({
-          key: 'deptIds',
-          q: query(baseRef, where('ownerDeptIds', 'array-contains-any', myDepts)),
+        myDepts.forEach((dept) => {
+          queries.push({
+            key: `deptIds_${dept}`,
+            q: query(baseRef, where('ownerDeptIds', 'array-contains', dept)),
+          });
         });
         const chunkSize = 10;
         for (let i = 0; i < myDepts.length; i += chunkSize) {
