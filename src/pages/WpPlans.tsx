@@ -5,7 +5,7 @@ import { ClipboardList, Copy, Plus } from 'lucide-react';
 import { initFirebase } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { WpPlanDoc } from '../lib/wpTypes';
-import { timestampMs } from '../lib/wpTypes';
+import { timestampMs, WP_WORK_PLANS_COLLECTION } from '../lib/wpTypes';
 
 function formatDate(value: any) {
   if (!value) return '-';
@@ -30,7 +30,7 @@ export default function WpPlans() {
     if (!user?.uid) return;
     const { app } = initFirebase();
     const db = getFirestore(app);
-    const base = collection(db, 'wpPlans');
+    const base = collection(db, WP_WORK_PLANS_COLLECTION);
     const q = isAdmin
       ? query(base, limit(150))
       : query(base, where('createdByUid', '==', user.uid), limit(150));
@@ -42,7 +42,9 @@ export default function WpPlans() {
       setLoading(false);
     }, (err) => {
       console.error('WP plans listen failed', err);
-      setError(err?.message || 'Failed to load work plans.');
+      setError(err?.code === 'permission-denied'
+        ? 'Permission denied. Publish the RAK WP Firestore rules before using this page.'
+        : (err?.message || 'Failed to load work plans.'));
       setLoading(false);
     });
     return () => unsub();
@@ -103,9 +105,10 @@ export default function WpPlans() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <div className="text-base font-semibold text-gray-900">{plan.workDate || '-'}</div>
+                    <div className="text-base font-semibold text-gray-900">{plan.planCode || plan.workDate || '-'}</div>
                     <span className={`badge ${submitted ? 'status-ready' : 'status-partially_approved'}`}>{plan.status}</span>
                   </div>
+                  <div className="mt-1 text-xs text-gray-500">{plan.workDate || '-'} - {plan.coordinatorNameEn || plan.createdBy?.fullName || '-'}</div>
                   <div className="mt-1 text-sm text-gray-600">
                     {(plan.groups || []).length} group{(plan.groups || []).length === 1 ? '' : 's'} - {countEmployees(plan)} employee{countEmployees(plan) === 1 ? '' : 's'}
                   </div>
@@ -130,4 +133,3 @@ export default function WpPlans() {
     </div>
   );
 }
-

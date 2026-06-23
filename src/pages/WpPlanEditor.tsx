@@ -6,18 +6,19 @@ import {
   getDoc,
   getDocs,
   getFirestore,
-  onSnapshot,
+  runTransaction,
   serverTimestamp,
-  setDoc,
   updateDoc,
 } from 'firebase/firestore';
-import { Copy, Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, Copy, Plus, Trash2, X } from 'lucide-react';
 import { initFirebase } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import {
   makeWpGroup,
   todayYmd,
+  WP_COUNTERS_COLLECTION,
   WP_EMPLOYEE_SEED,
+  WP_WORK_PLANS_COLLECTION,
   type WpAssignmentGroup,
   type WpEmployee,
   type WpPlanDoc,
@@ -36,8 +37,42 @@ function employeeHaystack(employee: WpEmployee) {
     employee.fullName,
     employee.memberCode,
     employee.position || '',
+    employee.assignmentPosition || '',
     employee.department || '',
   ].join(' ').toLowerCase();
+}
+
+function splitNames(value: string): string[] {
+  return value
+    .split(/[;,،\n]/)
+    .map((part) => cleanText(part))
+    .filter(Boolean);
+}
+
+function isEnglishProjectText(value: string) {
+  const clean = cleanText(value);
+  if (!clean) return true;
+  return /^[A-Za-z0-9 ._/#&()+-]+$/.test(clean);
+}
+
+function toEnglishName(value: string, fallback: string) {
+  const english = value.replace(/[^A-Za-z .'-]/g, ' ').replace(/\s+/g, ' ').trim();
+  return english || fallback.replace(/[^A-Za-z .'-]/g, ' ').replace(/\s+/g, ' ').trim() || 'Coordinator';
+}
+
+function slugify(value: string) {
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug || 'coordinator';
+}
+
+function manualEmployeeId(name: string) {
+  return `manual-${cleanText(name).toLowerCase()}`;
+}
+
+function normalizeEngineerNames(value: any): string[] {
+  if (Array.isArray(value)) return value.map((entry) => cleanText(String(entry || ''))).filter(Boolean);
+  if (typeof value === 'string') return splitNames(value);
+  return [];
 }
 
 export default function WpPlanEditor() {
@@ -54,11 +89,15 @@ export default function WpPlanEditor() {
   const [workDate, setWorkDate] = useState(todayYmd());
   const [status, setStatus] = useState<WpPlanStatus>('DRAFT');
   const [groups, setGroups] = useState<WpAssignmentGroup[]>([makeWpGroup()]);
-  const [employees, setEmployees] = useState<WpEmployee[]>(WP_EMPLOYEE_SEED);
+  const [employees] = useState<WpEmployee[]>(WP_EMPLOYEE_SEED);
   const [projects, setProjects] = useState<Project[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [planOwner, setPlanOwner] = useState<{ createdByUid?: string; createdBy?: WpPlanDoc['createdBy'] } | null>(null);
   const [employeeSearch, setEmployeeSearch] = useState<Record<string, string>>({});
+  const [engineerDraft, setEngineerDraft] = useState<Record<string, string>>({});
+  const [manualName, setManualName] = useState<Record<string, string>>({});
+  const [manualPosition, setManualPosition] = useState<Record<string, string>>({});
+  const [manualDepartment, setManualDepartment] = useState<Record<string, string>>({});
   const [sourcePlanId, setSourcePlanId] = useState<string | null>(copyId || null);
   const [loading, setLoading] = useState(!!id || !!copyId);
   const [busy, setBusy] = useState(false);
@@ -67,26 +106,6 @@ export default function WpPlanEditor() {
 
   const readOnly = isEdit && status === 'SUBMITTED';
   const title = isEdit ? (readOnly ? 'View Work Plan' : 'Edit Work Plan') : 'New Work Plan';
-
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'wpEmployees'), (snap) => {
-      if (snap.empty) return;
-      const live = snap.docs.map((docSnap) => {
-        const data = docSnap.data() as any;
-        return {
-          id: data.id || data.memberCode || docSnap.id,
-          memberCode: data.memberCode || docSnap.id,
-          fullName: data.fullName || '',
-          position: data.position || '',
-          department: data.department || '',
-        } as WpEmployee;
-      }).filter((employee) => employee.fullName && employee.memberCode);
-      if (live.length) setEmployees(live);
-    }, (err) => {
-      console.warn('WP employees collection unavailable; using seed data.', err);
-    });
-    return () => unsub();
-  }, [db]);
 
   useEffect(() => {
     let active = true;
@@ -114,7 +133,7 @@ export default function WpPlanEditor() {
       setLoading(true);
       setError(null);
       try {
-        const snap = await getDoc(doc(db, 'wpPlans', loadId));
+        const snap = await getDoc(doc(db, WP_WORK_PLANS_COLLECTION, loadId));
         if (!snap.exists()) {
           setError('Work plan not found.');
           return;
@@ -129,14 +148,23 @@ export default function WpPlanEditor() {
               id: `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
               projectCode: group.projectCode || '',
               projectName: group.projectName || '',
-              engineerNames: group.engineerNames || '',
+              engineerNames: normalizeEngineerNames(group.engineerNames),
               employeeIds: Array.isArray(group.employeeIds) ? group.employeeIds : [],
-              employeeSnapshots: Array.isArray(group.employeeSnapshots) ? group.employeeSnapshots : [],
+              employeeSnapshots: Array.isArray(group.employeeSnapshots)
+                ? group.employeeSnapshots.map((employee) => ({
+                    ...employee,
+                    originalPosition: employee.originalPosition || employee.position || '',
+                    assignmentPosition: employee.assignmentPosition || employee.position || '',
+                  }))
+                : [],
+              collapsed: false,
             }))
           : [makeWpGroup()];
         setGroups(loadedGroups);
       } catch (err: any) {
-        setError(err?.message || 'Failed to load work plan.');
+        setError(err?.code === 'permission-denied'
+          ? 'Permission denied. Publish the RAK WP Firestore rules before using this page.'
+          : (err?.message || 'Failed to load work plan.'));
       } finally {
         setLoading(false);
       }
@@ -149,6 +177,19 @@ export default function WpPlanEditor() {
     employees.forEach((employee) => map.set(employee.id, employee));
     return map;
   }, [employees]);
+
+  const employeeUseMap = useMemo(() => {
+    const map = new Map<string, { count: number; groups: string[] }>();
+    groups.forEach((group, idx) => {
+      group.employeeIds.forEach((employeeId) => {
+        const current = map.get(employeeId) || { count: 0, groups: [] };
+        current.count += 1;
+        current.groups.push(`Group ${idx + 1}`);
+        map.set(employeeId, current);
+      });
+    });
+    return map;
+  }, [groups]);
 
   const updateGroup = (groupId: string, patch: Partial<WpAssignmentGroup>) => {
     if (readOnly) return;
@@ -165,17 +206,76 @@ export default function WpPlanEditor() {
     setGroups((prev) => prev.length <= 1 ? prev : prev.filter((group) => group.id !== groupId));
   };
 
+  const toggleGroup = (groupId: string) => {
+    setGroups((prev) => prev.map((group) => group.id === groupId ? { ...group, collapsed: !group.collapsed } : group));
+  };
+
+  const addEngineer = (groupId: string) => {
+    if (readOnly) return;
+    const names = splitNames(engineerDraft[groupId] || '');
+    if (!names.length) return;
+    setGroups((prev) => prev.map((group) => {
+      if (group.id !== groupId) return group;
+      const merged = Array.from(new Set([...(group.engineerNames || []), ...names]));
+      return { ...group, engineerNames: merged };
+    }));
+    setEngineerDraft((prev) => ({ ...prev, [groupId]: '' }));
+  };
+
+  const removeEngineer = (groupId: string, name: string) => {
+    if (readOnly) return;
+    setGroups((prev) => prev.map((group) => (
+      group.id === groupId
+        ? { ...group, engineerNames: group.engineerNames.filter((entry) => entry !== name) }
+        : group
+    )));
+  };
+
+  const snapshotEmployee = (employee: WpEmployee): WpEmployee => ({
+    id: employee.id,
+    memberCode: employee.memberCode,
+    fullName: employee.fullName,
+    position: employee.assignmentPosition || employee.position || '',
+    assignmentPosition: employee.assignmentPosition || employee.position || '',
+    originalPosition: employee.originalPosition || employee.position || '',
+    department: employee.department || '',
+    manual: !!employee.manual,
+  });
+
   const addEmployeeToGroup = (groupId: string, employee: WpEmployee) => {
     if (readOnly) return;
+    const snapshot = snapshotEmployee(employee);
     setGroups((prev) => prev.map((group) => {
-      if (group.id !== groupId || group.employeeIds.includes(employee.id)) return group;
+      if (group.id !== groupId || group.employeeIds.includes(snapshot.id)) return group;
       return {
         ...group,
-        employeeIds: [...group.employeeIds, employee.id],
-        employeeSnapshots: [...group.employeeSnapshots.filter((e) => e.id !== employee.id), employee],
+        employeeIds: [...group.employeeIds, snapshot.id],
+        employeeSnapshots: [...group.employeeSnapshots.filter((e) => e.id !== snapshot.id), snapshot],
       };
     }));
     setEmployeeSearch((prev) => ({ ...prev, [groupId]: '' }));
+  };
+
+  const addManualEmployeeToGroup = (groupId: string) => {
+    if (readOnly) return;
+    const name = cleanText(manualName[groupId] || '');
+    if (!name) return;
+    const position = cleanText(manualPosition[groupId] || '');
+    const department = cleanText(manualDepartment[groupId] || '');
+    const employee: WpEmployee = {
+      id: manualEmployeeId(name),
+      memberCode: 'MANUAL',
+      fullName: name,
+      position,
+      assignmentPosition: position,
+      originalPosition: position,
+      department,
+      manual: true,
+    };
+    addEmployeeToGroup(groupId, employee);
+    setManualName((prev) => ({ ...prev, [groupId]: '' }));
+    setManualPosition((prev) => ({ ...prev, [groupId]: '' }));
+    setManualDepartment((prev) => ({ ...prev, [groupId]: '' }));
   };
 
   const removeEmployeeFromGroup = (groupId: string, employeeId: string) => {
@@ -190,20 +290,55 @@ export default function WpPlanEditor() {
     }));
   };
 
+  const updateEmployeePosition = (groupId: string, employeeId: string, position: string) => {
+    if (readOnly) return;
+    setGroups((prev) => prev.map((group) => {
+      if (group.id !== groupId) return group;
+      const existing = group.employeeSnapshots.find((employee) => employee.id === employeeId)
+        || employeeById.get(employeeId);
+      if (!existing) return group;
+      const nextSnapshot = {
+        ...snapshotEmployee(existing),
+        position,
+        assignmentPosition: position,
+        originalPosition: existing.originalPosition || existing.position || '',
+      };
+      return {
+        ...group,
+        employeeSnapshots: [
+          ...group.employeeSnapshots.filter((employee) => employee.id !== employeeId),
+          nextSnapshot,
+        ],
+      };
+    }));
+  };
+
   const getSelectedEmployees = (group: WpAssignmentGroup) => {
-    return group.employeeIds.map((employeeId) => (
-      employeeById.get(employeeId)
-      || group.employeeSnapshots.find((employee) => employee.id === employeeId)
-    )).filter(Boolean) as WpEmployee[];
+    return group.employeeIds.map((employeeId) => {
+      const snapshot = group.employeeSnapshots.find((employee) => employee.id === employeeId);
+      const base = employeeById.get(employeeId);
+      if (!snapshot && !base) return null;
+      return {
+        ...(base || {}),
+        ...(snapshot || {}),
+        id: employeeId,
+        memberCode: snapshot?.memberCode || base?.memberCode || '',
+        fullName: snapshot?.fullName || base?.fullName || '',
+        position: snapshot?.assignmentPosition || snapshot?.position || base?.position || '',
+        assignmentPosition: snapshot?.assignmentPosition || snapshot?.position || base?.position || '',
+        originalPosition: snapshot?.originalPosition || base?.position || snapshot?.position || '',
+        department: snapshot?.department || base?.department || '',
+      } as WpEmployee;
+    }).filter(Boolean) as WpEmployee[];
   };
 
   const getEmployeeResults = (group: WpAssignmentGroup) => {
-    const selected = new Set(group.employeeIds);
+    const selectedInCurrent = new Set(group.employeeIds);
     const queryText = (employeeSearch[group.id] || '').toLowerCase().trim();
     const tokens = queryText.split(/\s+/).filter(Boolean);
-    if (!tokens.length) return employees.filter((employee) => !selected.has(employee.id)).slice(0, 25);
-    return employees
-      .filter((employee) => !selected.has(employee.id))
+    const available = employees.filter((employee) => !selectedInCurrent.has(employee.id));
+    if (!tokens.length) return available.slice(0, 25);
+    return available
       .filter((employee) => {
         const hay = employeeHaystack(employee);
         return tokens.every((token) => hay.includes(token));
@@ -218,8 +353,11 @@ export default function WpPlanEditor() {
       const group = groups[i];
       const label = `Group ${i + 1}`;
       if (!cleanText(group.projectCode)) return `${label}: project is required.`;
-      if (!cleanText(group.engineerNames)) return `${label}: engineer is required.`;
-      if (!group.employeeIds.length) return `${label}: select at least one employee.`;
+      if (!isEnglishProjectText(group.projectCode) || !isEnglishProjectText(group.projectName || '')) {
+        return `${label}: project must be written in English.`;
+      }
+      if (!group.engineerNames.length) return `${label}: select or type at least one engineer.`;
+      if (!group.employeeIds.length) return `${label}: select or type at least one employee.`;
     }
     return null;
   };
@@ -231,15 +369,21 @@ export default function WpPlanEditor() {
         id: group.id,
         projectCode: cleanText(group.projectCode),
         projectName: cleanText(group.projectName || ''),
-        engineerNames: cleanText(group.engineerNames),
+        engineerNames: group.engineerNames.map(cleanText).filter(Boolean),
         employeeIds: snapshots.map((employee) => employee.id),
-        employeeSnapshots: snapshots.map((employee) => ({
-          id: employee.id,
-          memberCode: employee.memberCode,
-          fullName: employee.fullName,
-          position: employee.position || '',
-          department: employee.department || '',
-        })),
+        employeeSnapshots: snapshots.map((employee) => {
+          const effectivePosition = employee.assignmentPosition || employee.position || '';
+          return {
+            id: employee.id,
+            memberCode: employee.memberCode,
+            fullName: employee.fullName,
+            position: effectivePosition,
+            assignmentPosition: effectivePosition,
+            originalPosition: employee.originalPosition || employee.position || '',
+            department: employee.department || '',
+            manual: !!employee.manual,
+          };
+        }),
       };
     });
   };
@@ -264,11 +408,14 @@ export default function WpPlanEditor() {
             email: user.email || null,
             fullName: fullName || null,
           };
-      const payload = {
+      const fallbackName = user.email?.split('@')[0] || 'Coordinator';
+      const coordinatorNameEn = toEnglishName(String(ownerInfo.fullName || ''), fallbackName);
+      const basePayload = {
         workDate,
         status: nextStatus,
         groups: groupsPayload,
         sourcePlanId: sourcePlanId || null,
+        coordinatorNameEn,
         createdByUid: ownerUid,
         createdBy: ownerInfo,
         updatedAt: serverTimestamp(),
@@ -276,26 +423,45 @@ export default function WpPlanEditor() {
       };
 
       if (isEdit && id) {
-        await updateDoc(doc(db, 'wpPlans', id), payload);
+        await updateDoc(doc(db, WP_WORK_PLANS_COLLECTION, id), basePayload);
         setStatus(nextStatus);
-        setGroups(groupsPayload);
+        setGroups(groupsPayload.map((group) => ({ ...group, collapsed: false })));
         setSuccess(nextStatus === 'SUBMITTED' ? 'Work plan submitted.' : 'Draft saved.');
         if (nextStatus === 'SUBMITTED') nav('/wp');
       } else {
-        const ref = doc(collection(db, 'wpPlans'));
-        await setDoc(ref, {
-          ...payload,
-          createdAt: serverTimestamp(),
+        const dateKey = workDate.replace(/-/g, '');
+        const coordinatorSlug = slugify(coordinatorNameEn);
+        const planId = await runTransaction(db, async (tx) => {
+          const counterRef = doc(db, WP_COUNTERS_COLLECTION, `${coordinatorSlug}-${dateKey}`);
+          const counterSnap = await tx.get(counterRef);
+          const next = counterSnap.exists() ? Number((counterSnap.data() as any).next || 1) : 1;
+          const seq = Math.max(1, next);
+          const seqText = String(seq).padStart(3, '0');
+          const newPlanId = `wp-${coordinatorSlug}-${dateKey}-${seqText}`;
+          const planRef = doc(db, WP_WORK_PLANS_COLLECTION, newPlanId);
+          tx.set(counterRef, {
+            next: seq + 1,
+            dateKey,
+            coordinatorNameEn,
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+          tx.set(planRef, {
+            ...basePayload,
+            planCode: `${coordinatorSlug.toUpperCase()}-${dateKey}-${seqText}`,
+            sequenceNo: seq,
+            createdAt: serverTimestamp(),
+          });
+          return newPlanId;
         });
         if (nextStatus === 'SUBMITTED') {
           nav('/wp');
         } else {
-          nav(`/wp/${ref.id}`, { replace: true });
+          nav(`/wp/${planId}`, { replace: true });
         }
       }
     } catch (err: any) {
       if (err?.code === 'permission-denied') {
-        setError('Permission denied.');
+        setError('Permission denied. Publish the RAK WP Firestore rules before saving.');
       } else {
         setError(err?.message || 'Failed to save work plan.');
       }
@@ -351,7 +517,7 @@ export default function WpPlanEditor() {
           <div>
             <label className="block text-xs text-gray-500 mb-1">Coordinator</label>
             <div className="h-10 px-3 rounded-xl border border-gray-200 flex items-center text-sm text-gray-700 truncate">
-              {fullName || user?.email || '-'}
+              {toEnglishName(fullName, user?.email?.split('@')[0] || 'Coordinator')}
             </div>
           </div>
         </div>
@@ -375,99 +541,194 @@ export default function WpPlanEditor() {
           const selectedEmployees = getSelectedEmployees(group);
           const employeeResults = getEmployeeResults(group);
           return (
-            <div key={group.id} className="card p-4 space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
+            <div key={group.id} className="card p-0 overflow-hidden">
+              <div className="px-4 py-3 flex items-center justify-between gap-3">
+                <button type="button" className="flex-1 text-left" onClick={() => toggleGroup(group.id)}>
                   <div className="text-base font-semibold">Group {index + 1}</div>
-                  <div className="text-xs text-gray-500">{selectedEmployees.length} selected employee{selectedEmployees.length === 1 ? '' : 's'}</div>
-                </div>
-                {!readOnly && groups.length > 1 && (
-                  <button type="button" className="btn-ghost text-red-600" onClick={() => removeGroup(group.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Project</label>
-                  <input
-                    className="input w-full"
-                    list="wp-project-options"
-                    value={group.projectCode}
-                    disabled={readOnly}
-                    placeholder="Example: DS01"
-                    onChange={(e) => updateGroup(group.id, { projectCode: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Project description</label>
-                  <input
-                    className="input w-full"
-                    value={group.projectName || ''}
-                    disabled={readOnly}
-                    placeholder="Optional"
-                    onChange={(e) => updateGroup(group.id, { projectName: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Engineer(s)</label>
-                  <input
-                    className="input w-full"
-                    list="wp-engineer-options"
-                    value={group.engineerNames}
-                    disabled={readOnly}
-                    placeholder="One or more engineers"
-                    onChange={(e) => updateGroup(group.id, { engineerNames: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Employees</label>
-                {!readOnly && (
-                  <input
-                    className="input w-full"
-                    value={employeeSearch[group.id] || ''}
-                    placeholder="Search by name, code, department, or position"
-                    onChange={(e) => setEmployeeSearch((prev) => ({ ...prev, [group.id]: e.target.value }))}
-                  />
-                )}
-
-                {!readOnly && (
-                  <div className="mt-2 max-h-56 overflow-y-auto border border-gray-100 rounded-xl">
-                    {employeeResults.map((employee) => (
-                      <button
-                        key={employee.id}
-                        type="button"
-                        className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-b-0"
-                        onClick={() => addEmployeeToGroup(group.id, employee)}
-                      >
-                        <div className="text-sm font-semibold text-gray-900">{employee.fullName}</div>
-                        <div className="text-xs text-gray-500">{employee.memberCode} - {employee.position || '-'} - {employee.department || '-'}</div>
-                      </button>
-                    ))}
-                    {employeeResults.length === 0 && <div className="px-3 py-3 text-sm text-gray-500">No employees found.</div>}
+                  <div className="text-xs text-gray-500">
+                    {group.projectCode || 'No project'} - {group.engineerNames.length} engineer{group.engineerNames.length === 1 ? '' : 's'} - {selectedEmployees.length} employee{selectedEmployees.length === 1 ? '' : 's'}
                   </div>
-                )}
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {selectedEmployees.map((employee) => (
-                    <span key={employee.id} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm bg-white">
-                      <span>
-                        <span className="font-semibold">{employee.fullName}</span>
-                        <span className="text-xs text-gray-500"> - {employee.memberCode}</span>
-                      </span>
-                      {!readOnly && (
-                        <button type="button" className="text-gray-400 hover:text-red-600" onClick={() => removeEmployeeFromGroup(group.id, employee.id)}>
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                  {selectedEmployees.length === 0 && <div className="text-sm text-gray-500">No employees selected.</div>}
+                </button>
+                <div className="flex items-center gap-2">
+                  {!readOnly && groups.length > 1 && (
+                    <button type="button" className="btn-ghost text-red-600" onClick={() => removeGroup(group.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => toggleGroup(group.id)}>
+                    <span className="text-sm">{group.collapsed ? 'Show' : 'Hide'}</span>
+                    <ChevronDown className={`h-4 w-4 icon-blue transition-transform ${group.collapsed ? '' : 'rotate-180'}`} />
+                  </button>
                 </div>
               </div>
+
+              {!group.collapsed && (
+                <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Project</label>
+                      <input
+                        className="input w-full"
+                        list="wp-project-options"
+                        value={group.projectCode}
+                        disabled={readOnly}
+                        placeholder="Example: DS01"
+                        onChange={(e) => updateGroup(group.id, { projectCode: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Project description</label>
+                      <input
+                        className="input w-full"
+                        value={group.projectName || ''}
+                        disabled={readOnly}
+                        placeholder="English only"
+                        onChange={(e) => updateGroup(group.id, { projectName: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Engineer(s)</label>
+                    {!readOnly && (
+                      <div className="flex gap-2">
+                        <input
+                          className="input w-full"
+                          list="wp-engineer-options"
+                          value={engineerDraft[group.id] || ''}
+                          placeholder="Type engineer name"
+                          onChange={(e) => setEngineerDraft((prev) => ({ ...prev, [group.id]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              addEngineer(group.id);
+                            }
+                          }}
+                        />
+                        <button type="button" className="btn-primary" onClick={() => addEngineer(group.id)}>Add</button>
+                      </div>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {group.engineerNames.map((name) => (
+                        <span key={name} className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                          <span>{name}</span>
+                          {!readOnly && (
+                            <button type="button" className="text-blue-500 hover:text-red-600" onClick={() => removeEngineer(group.id, name)}>
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                      {group.engineerNames.length === 0 && <div className="text-sm text-gray-500">No engineers selected.</div>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Employees</label>
+                    {!readOnly && (
+                      <input
+                        className="input w-full"
+                        value={employeeSearch[group.id] || ''}
+                        placeholder="Search by name, code, department, or position"
+                        onChange={(e) => setEmployeeSearch((prev) => ({ ...prev, [group.id]: e.target.value }))}
+                      />
+                    )}
+
+                    {!readOnly && (
+                      <div className="mt-2 max-h-56 overflow-y-auto border border-gray-100 rounded-xl">
+                        {employeeResults.map((employee) => {
+                          const usage = employeeUseMap.get(employee.id);
+                          const usedElsewhere = !!usage && usage.groups.some((label) => label !== `Group ${index + 1}`);
+                          const rowClass = usedElsewhere
+                            ? 'bg-amber-50 hover:bg-amber-100'
+                            : 'hover:bg-blue-50';
+                          return (
+                            <button
+                              key={employee.id}
+                              type="button"
+                              className={`w-full text-left px-3 py-2 border-b border-gray-50 last:border-b-0 ${rowClass}`}
+                              onClick={() => addEmployeeToGroup(group.id, employee)}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="text-sm font-semibold text-gray-900">{employee.fullName}</div>
+                                  <div className="text-xs text-gray-500">{employee.memberCode} - {employee.position || '-'} - {employee.department || '-'}</div>
+                                </div>
+                                {usedElsewhere && <span className="text-[11px] font-semibold text-amber-700">Already used</span>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                        {employeeResults.length === 0 && <div className="px-3 py-3 text-sm text-gray-500">No employees found.</div>}
+                      </div>
+                    )}
+
+                    {!readOnly && (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                        <input
+                          className="input sm:col-span-2"
+                          value={manualName[group.id] || ''}
+                          placeholder="Manual employee name"
+                          onChange={(e) => setManualName((prev) => ({ ...prev, [group.id]: e.target.value }))}
+                        />
+                        <input
+                          className="input"
+                          value={manualPosition[group.id] || ''}
+                          placeholder="Position"
+                          onChange={(e) => setManualPosition((prev) => ({ ...prev, [group.id]: e.target.value }))}
+                        />
+                        <div className="flex gap-2">
+                          <input
+                            className="input"
+                            value={manualDepartment[group.id] || ''}
+                            placeholder="Department"
+                            onChange={(e) => setManualDepartment((prev) => ({ ...prev, [group.id]: e.target.value }))}
+                          />
+                          <button type="button" className="btn-primary" onClick={() => addManualEmployeeToGroup(group.id)}>Add</button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-3 space-y-2">
+                      {selectedEmployees.map((employee) => {
+                        const usage = employeeUseMap.get(employee.id);
+                        const duplicate = !!usage && usage.count > 1;
+                        return (
+                          <div
+                            key={employee.id}
+                            className={`rounded-xl border px-3 py-3 ${duplicate ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'}`}
+                          >
+                            <div className="grid gap-3 sm:grid-cols-[1fr_180px_44px] sm:items-center">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-gray-900 break-words">{employee.fullName}</div>
+                                <div className="text-xs text-gray-500 break-words">
+                                  {employee.memberCode || '-'} - {employee.department || '-'}
+                                  {duplicate ? ` - ${usage?.groups.join(', ')}` : ''}
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[11px] text-gray-500 mb-1">Position</label>
+                                <input
+                                  className="input w-full"
+                                  value={employee.assignmentPosition || employee.position || ''}
+                                  disabled={readOnly}
+                                  onChange={(e) => updateEmployeePosition(group.id, employee.id, e.target.value)}
+                                />
+                              </div>
+                              {!readOnly && (
+                                <button type="button" className="btn-ghost text-red-600" onClick={() => removeEmployeeFromGroup(group.id, employee.id)}>
+                                  <X className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {selectedEmployees.length === 0 && <div className="text-sm text-gray-500">No employees selected.</div>}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -498,3 +759,4 @@ export default function WpPlanEditor() {
     </div>
   );
 }
+

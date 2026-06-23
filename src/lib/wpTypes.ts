@@ -8,23 +8,30 @@ export type WpEmployee = {
   fullName: string;
   position?: string;
   department?: string;
+  assignmentPosition?: string;
+  originalPosition?: string;
+  manual?: boolean;
 };
 
 export type WpAssignmentGroup = {
   id: string;
   projectCode: string;
   projectName?: string;
-  engineerNames: string;
+  engineerNames: string[];
   employeeIds: string[];
   employeeSnapshots: WpEmployee[];
+  collapsed?: boolean;
 };
 
 export type WpPlanDoc = {
   id: string;
+  planCode?: string;
+  sequenceNo?: number;
   workDate: string;
   status: WpPlanStatus;
   groups: WpAssignmentGroup[];
   sourcePlanId?: string | null;
+  coordinatorNameEn?: string;
   createdByUid?: string;
   createdBy?: {
     uid?: string;
@@ -37,15 +44,18 @@ export type WpPlanDoc = {
 };
 
 export const WP_EMPLOYEE_SEED = employeeSeed as WpEmployee[];
+export const WP_WORK_PLANS_COLLECTION = 'rakWp_workPlans';
+export const WP_COUNTERS_COLLECTION = 'rakWp_counters';
 
 export function makeWpGroup(): WpAssignmentGroup {
   return {
     id: `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     projectCode: '',
     projectName: '',
-    engineerNames: '',
+    engineerNames: [],
     employeeIds: [],
     employeeSnapshots: [],
+    collapsed: false,
   };
 }
 
@@ -70,4 +80,3 @@ export function timestampMs(value: any): number {
   }
   return 0;
 }
-

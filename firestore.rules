@@ -101,20 +101,27 @@ service cloud.firestore {
 
     /* ===== Helpers: RAK WP ===== */
 
-    function wpPlanOwner(data) {
+    function rakWpPlanOwner(data) {
       return signedIn()
         && data != null
         && data.createdByUid == request.auth.uid;
     }
 
-    function wpIncomingOwnerValid() {
+    function rakWpIncomingOwnerValid() {
       return signedIn()
         && request.resource.data.createdByUid == request.auth.uid
         && request.resource.data.createdBy != null
         && request.resource.data.createdBy.uid == request.auth.uid;
     }
 
-    function wpIncomingStatusAllowed() {
+    function rakWpOwnerUnchanged() {
+      return request.resource.data.createdByUid == resource.data.createdByUid
+        && request.resource.data.createdBy != null
+        && resource.data.createdBy != null
+        && request.resource.data.createdBy.uid == resource.data.createdBy.uid;
+    }
+
+    function rakWpIncomingStatusAllowed() {
       return request.resource.data.status in ['DRAFT','SUBMITTED'];
     }
 
@@ -545,29 +552,25 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    /* RAK WP */
-    match /wpEmployees/{id} {
-      allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
-    }
-
-    match /wpPlans/{id} {
-      allow read: if isAdmin() || wpPlanOwner(resource.data);
+    /* RAK WP - isolated work plan collections */
+    match /rakWp_workPlans/{id} {
+      allow read: if isAdmin() || rakWpPlanOwner(resource.data);
       allow create: if signedIn()
-        && wpIncomingOwnerValid()
-        && wpIncomingStatusAllowed();
-      allow update: if isAdmin()
-        || (
-             wpPlanOwner(resource.data)
-             && resource.data.status == 'DRAFT'
-             && wpIncomingOwnerValid()
-             && wpIncomingStatusAllowed()
-           );
+        && rakWpIncomingOwnerValid()
+        && rakWpIncomingStatusAllowed();
+      allow update: if rakWpPlanOwner(resource.data)
+        && resource.data.status == 'DRAFT'
+        && rakWpOwnerUnchanged()
+        && rakWpIncomingStatusAllowed();
       allow delete: if isAdmin()
         || (
-             wpPlanOwner(resource.data)
+             rakWpPlanOwner(resource.data)
              && resource.data.status == 'DRAFT'
            );
+    }
+
+    match /rakWp_counters/{id} {
+      allow read, write: if signedIn();
     }
 
     /* ===== Requests ===== */
