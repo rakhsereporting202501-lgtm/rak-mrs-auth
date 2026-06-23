@@ -27,6 +27,7 @@ import {
 
 type Project = { id: string; nameAr?: string; nameEn?: string; name?: string };
 type Engineer = { id: string; nameAr?: string; nameEn?: string };
+type EngineerCandidate = { id: string; name: string; position?: string; department?: string };
 
 function cleanText(value: string) {
   return value.trim().replace(/\s+/g, ' ');
@@ -45,6 +46,13 @@ function employeeHaystack(employee: WpEmployee) {
 function splitNames(value: string): string[] {
   return value
     .split(/[;,،\n]/)
+    .map((part) => cleanText(part))
+    .filter(Boolean);
+}
+
+function splitNameTokens(value: string): string[] {
+  return value
+    .split(/[;,\u060C\n]/)
     .map((part) => cleanText(part))
     .filter(Boolean);
 }
@@ -71,7 +79,7 @@ function manualEmployeeId(name: string) {
 
 function normalizeEngineerNames(value: any): string[] {
   if (Array.isArray(value)) return value.map((entry) => cleanText(String(entry || ''))).filter(Boolean);
-  if (typeof value === 'string') return splitNames(value);
+  if (typeof value === 'string') return splitNameTokens(value);
   return [];
 }
 
@@ -85,7 +93,17 @@ export default function WpPlanEditor() {
   const { app } = initFirebase();
   const db = getFirestore(app);
   const fullName = role?.fullName || user?.displayName || user?.email || '';
+  const savedEditorFilters = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('rakWp.editor.filters');
+      return raw ? JSON.parse(raw) || {} : {};
+    } catch {
+      return {};
+    }
+  }, []);
 
+  const [planCode, setPlanCode] = useState('');
+  const [coordinatorNameEn, setCoordinatorNameEn] = useState('');
   const [workDate, setWorkDate] = useState(todayYmd());
   const [status, setStatus] = useState<WpPlanStatus>('DRAFT');
   const [groups, setGroups] = useState<WpAssignmentGroup[]>([makeWpGroup()]);
@@ -98,6 +116,16 @@ export default function WpPlanEditor() {
   const [manualName, setManualName] = useState<Record<string, string>>({});
   const [manualPosition, setManualPosition] = useState<Record<string, string>>({});
   const [manualDepartment, setManualDepartment] = useState<Record<string, string>>({});
+  const [employeeDeptFilter, setEmployeeDeptFilter] = useState(() => typeof savedEditorFilters.employeeDeptFilter === 'string' ? savedEditorFilters.employeeDeptFilter : '');
+  const [employeePositionFilter, setEmployeePositionFilter] = useState(() => typeof savedEditorFilters.employeePositionFilter === 'string' ? savedEditorFilters.employeePositionFilter : '');
+  const [employeeSortKey, setEmployeeSortKey] = useState<'name' | 'position' | 'department'>(() => (
+    ['name', 'position', 'department'].includes(savedEditorFilters.employeeSortKey) ? savedEditorFilters.employeeSortKey : 'name'
+  ));
+  const [engineerDeptFilter, setEngineerDeptFilter] = useState(() => typeof savedEditorFilters.engineerDeptFilter === 'string' ? savedEditorFilters.engineerDeptFilter : '');
+  const [engineerPositionFilter, setEngineerPositionFilter] = useState(() => typeof savedEditorFilters.engineerPositionFilter === 'string' ? savedEditorFilters.engineerPositionFilter : '');
+  const [engineerSortKey, setEngineerSortKey] = useState<'name' | 'position' | 'department'>(() => (
+    ['name', 'position', 'department'].includes(savedEditorFilters.engineerSortKey) ? savedEditorFilters.engineerSortKey : 'name'
+  ));
   const [sourcePlanId, setSourcePlanId] = useState<string | null>(copyId || null);
   const [loading, setLoading] = useState(!!id || !!copyId);
   const [busy, setBusy] = useState(false);
@@ -106,6 +134,19 @@ export default function WpPlanEditor() {
 
   const readOnly = isEdit && status === 'SUBMITTED';
   const title = isEdit ? (readOnly ? 'View Work Plan' : 'Edit Work Plan') : 'New Work Plan';
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rakWp.editor.filters', JSON.stringify({
+        employeeDeptFilter,
+        employeePositionFilter,
+        employeeSortKey,
+        engineerDeptFilter,
+        engineerPositionFilter,
+        engineerSortKey,
+      }));
+    } catch {}
+  }, [employeeDeptFilter, employeePositionFilter, employeeSortKey, engineerDeptFilter, engineerPositionFilter, engineerSortKey]);
 
   useEffect(() => {
     let active = true;
@@ -139,6 +180,8 @@ export default function WpPlanEditor() {
           return;
         }
         const data = { id: snap.id, ...(snap.data() as any) } as WpPlanDoc;
+        setPlanCode(copyId ? '' : (data.planCode || data.id || ''));
+        setCoordinatorNameEn(copyId ? '' : (data.coordinatorNameEn || ''));
         setWorkDate(copyId ? todayYmd() : (data.workDate || todayYmd()));
         setStatus(copyId ? 'DRAFT' : (data.status || 'DRAFT'));
         setSourcePlanId(copyId ? data.id : (data.sourcePlanId || null));
@@ -178,6 +221,54 @@ export default function WpPlanEditor() {
     return map;
   }, [employees]);
 
+  const displayCoordinatorName = useMemo(() => {
+    if (isEdit && !copyId) {
+      return coordinatorNameEn
+        || toEnglishName(String(planOwner?.createdBy?.fullName || planOwner?.createdBy?.email || ''), 'Coordinator');
+    }
+    return toEnglishName(fullName, user?.email?.split('@')[0] || 'Coordinator');
+  }, [isEdit, copyId, coordinatorNameEn, planOwner, fullName, user?.email]);
+
+  const employeeDepartments = useMemo(() => (
+    Array.from(new Set(employees.map((employee) => employee.department || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  ), [employees]);
+
+  const employeePositions = useMemo(() => (
+    Array.from(new Set(employees.map((employee) => employee.position || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  ), [employees]);
+
+  const engineerCandidates = useMemo(() => {
+    const map = new Map<string, EngineerCandidate>();
+    engineers.forEach((engineer) => {
+      const name = cleanText(engineer.nameEn || engineer.nameAr || engineer.id);
+      if (!name) return;
+      map.set(name.toLowerCase(), { id: `engineer-${engineer.id}`, name, position: 'Engineer', department: '' });
+    });
+    employees.forEach((employee) => {
+      const position = employee.position || '';
+      const name = employee.fullName || '';
+      if (!/engineer/i.test(`${position} ${name}`)) return;
+      const key = name.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          id: `employee-${employee.id}`,
+          name,
+          position,
+          department: employee.department || '',
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [engineers, employees]);
+
+  const engineerDepartments = useMemo(() => (
+    Array.from(new Set(engineerCandidates.map((engineer) => engineer.department || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  ), [engineerCandidates]);
+
+  const engineerPositions = useMemo(() => (
+    Array.from(new Set(engineerCandidates.map((engineer) => engineer.position || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  ), [engineerCandidates]);
+
   const employeeUseMap = useMemo(() => {
     const map = new Map<string, { count: number; groups: string[] }>();
     groups.forEach((group, idx) => {
@@ -210,9 +301,21 @@ export default function WpPlanEditor() {
     setGroups((prev) => prev.map((group) => group.id === groupId ? { ...group, collapsed: !group.collapsed } : group));
   };
 
+  const addEngineerName = (groupId: string, name: string) => {
+    if (readOnly) return;
+    const cleanName = cleanText(name);
+    if (!cleanName) return;
+    setGroups((prev) => prev.map((group) => {
+      if (group.id !== groupId) return group;
+      const merged = Array.from(new Set([...(group.engineerNames || []), cleanName]));
+      return { ...group, engineerNames: merged };
+    }));
+    setEngineerDraft((prev) => ({ ...prev, [groupId]: '' }));
+  };
+
   const addEngineer = (groupId: string) => {
     if (readOnly) return;
-    const names = splitNames(engineerDraft[groupId] || '');
+    const names = splitNameTokens(engineerDraft[groupId] || '');
     if (!names.length) return;
     setGroups((prev) => prev.map((group) => {
       if (group.id !== groupId) return group;
@@ -220,6 +323,33 @@ export default function WpPlanEditor() {
       return { ...group, engineerNames: merged };
     }));
     setEngineerDraft((prev) => ({ ...prev, [groupId]: '' }));
+  };
+
+  const getEngineerResults = (group: WpAssignmentGroup) => {
+    const selected = new Set(group.engineerNames.map((name) => name.toLowerCase()));
+    const queryText = (engineerDraft[group.id] || '').toLowerCase().trim();
+    const tokens = queryText.split(/\s+/).filter(Boolean);
+    const filtered = engineerCandidates
+      .filter((engineer) => !selected.has(engineer.name.toLowerCase()))
+      .filter((engineer) => !engineerDeptFilter || engineer.department === engineerDeptFilter)
+      .filter((engineer) => !engineerPositionFilter || engineer.position === engineerPositionFilter)
+      .filter((engineer) => {
+        if (!tokens.length) return true;
+        const hay = [engineer.name, engineer.position || '', engineer.department || ''].join(' ').toLowerCase();
+        return tokens.every((token) => hay.includes(token));
+      });
+    filtered.sort((a, b) => {
+      if (engineerSortKey === 'position') {
+        const cmp = (a.position || '').localeCompare(b.position || '');
+        if (cmp) return cmp;
+      }
+      if (engineerSortKey === 'department') {
+        const cmp = (a.department || '').localeCompare(b.department || '');
+        if (cmp) return cmp;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    return filtered.slice(0, 40);
   };
 
   const removeEngineer = (groupId: string, name: string) => {
@@ -336,14 +466,29 @@ export default function WpPlanEditor() {
     const selectedInCurrent = new Set(group.employeeIds);
     const queryText = (employeeSearch[group.id] || '').toLowerCase().trim();
     const tokens = queryText.split(/\s+/).filter(Boolean);
-    const available = employees.filter((employee) => !selectedInCurrent.has(employee.id));
-    if (!tokens.length) return available.slice(0, 25);
-    return available
+    const available = employees
+      .filter((employee) => !selectedInCurrent.has(employee.id))
+      .filter((employee) => !employeeDeptFilter || employee.department === employeeDeptFilter)
+      .filter((employee) => !employeePositionFilter || employee.position === employeePositionFilter);
+    const filtered = !tokens.length
+      ? available
+      : available
       .filter((employee) => {
         const hay = employeeHaystack(employee);
         return tokens.every((token) => hay.includes(token));
-      })
-      .slice(0, 40);
+      });
+    filtered.sort((a, b) => {
+      if (employeeSortKey === 'position') {
+        const cmp = (a.position || '').localeCompare(b.position || '');
+        if (cmp) return cmp;
+      }
+      if (employeeSortKey === 'department') {
+        const cmp = (a.department || '').localeCompare(b.department || '');
+        if (cmp) return cmp;
+      }
+      return a.fullName.localeCompare(b.fullName);
+    });
+    return filtered.slice(0, tokens.length ? 40 : 25);
   };
 
   const validate = () => {
@@ -496,6 +641,13 @@ export default function WpPlanEditor() {
         </div>
       )}
 
+      {isEdit && planCode && (
+        <div className="card p-4">
+          <div className="text-xs text-gray-500">Plan ID</div>
+          <div className="text-xl font-semibold text-gray-900 break-words">{planCode}</div>
+        </div>
+      )}
+
       <div className="card p-4 space-y-4">
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
@@ -517,7 +669,7 @@ export default function WpPlanEditor() {
           <div>
             <label className="block text-xs text-gray-500 mb-1">Coordinator</label>
             <div className="h-10 px-3 rounded-xl border border-gray-200 flex items-center text-sm text-gray-700 truncate">
-              {toEnglishName(fullName, user?.email?.split('@')[0] || 'Coordinator')}
+              {displayCoordinatorName}
             </div>
           </div>
         </div>
@@ -591,21 +743,51 @@ export default function WpPlanEditor() {
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Engineer(s)</label>
                     {!readOnly && (
-                      <div className="flex gap-2">
-                        <input
-                          className="input w-full"
-                          list="wp-engineer-options"
-                          value={engineerDraft[group.id] || ''}
-                          placeholder="Type engineer name"
-                          onChange={(e) => setEngineerDraft((prev) => ({ ...prev, [group.id]: e.target.value }))}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              addEngineer(group.id);
-                            }
-                          }}
-                        />
-                        <button type="button" className="btn-primary" onClick={() => addEngineer(group.id)}>Add</button>
+                      <div className="space-y-2">
+                        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                          <input
+                            className="input w-full"
+                            value={engineerDraft[group.id] || ''}
+                            placeholder="Search or type engineer name"
+                            onChange={(e) => setEngineerDraft((prev) => ({ ...prev, [group.id]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                addEngineer(group.id);
+                              }
+                            }}
+                          />
+                          <button type="button" className="btn-primary" onClick={() => addEngineer(group.id)}>Add Typed</button>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <select className="input" value={engineerDeptFilter} onChange={(e) => setEngineerDeptFilter(e.target.value)}>
+                            <option value="">All departments</option>
+                            {engineerDepartments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+                          </select>
+                          <select className="input" value={engineerPositionFilter} onChange={(e) => setEngineerPositionFilter(e.target.value)}>
+                            <option value="">All positions</option>
+                            {engineerPositions.map((position) => <option key={position} value={position}>{position}</option>)}
+                          </select>
+                          <select className="input" value={engineerSortKey} onChange={(e) => setEngineerSortKey(e.target.value as any)}>
+                            <option value="name">Sort by name</option>
+                            <option value="position">Sort by position</option>
+                            <option value="department">Sort by department</option>
+                          </select>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto border border-gray-100 rounded-xl">
+                          {getEngineerResults(group).map((engineer) => (
+                            <button
+                              key={engineer.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-b-0"
+                              onClick={() => addEngineerName(group.id, engineer.name)}
+                            >
+                              <div className="text-sm font-semibold text-gray-900">{engineer.name}</div>
+                              <div className="text-xs text-gray-500">{engineer.position || '-'} - {engineer.department || '-'}</div>
+                            </button>
+                          ))}
+                          {getEngineerResults(group).length === 0 && <div className="px-3 py-3 text-sm text-gray-500">No engineers found.</div>}
+                        </div>
                       </div>
                     )}
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -632,6 +814,24 @@ export default function WpPlanEditor() {
                         placeholder="Search by name, code, department, or position"
                         onChange={(e) => setEmployeeSearch((prev) => ({ ...prev, [group.id]: e.target.value }))}
                       />
+                    )}
+
+                    {!readOnly && (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                        <select className="input" value={employeeDeptFilter} onChange={(e) => setEmployeeDeptFilter(e.target.value)}>
+                          <option value="">All departments</option>
+                          {employeeDepartments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+                        </select>
+                        <select className="input" value={employeePositionFilter} onChange={(e) => setEmployeePositionFilter(e.target.value)}>
+                          <option value="">All positions</option>
+                          {employeePositions.map((position) => <option key={position} value={position}>{position}</option>)}
+                        </select>
+                        <select className="input" value={employeeSortKey} onChange={(e) => setEmployeeSortKey(e.target.value as any)}>
+                          <option value="name">Sort by name</option>
+                          <option value="position">Sort by position</option>
+                          <option value="department">Sort by department</option>
+                        </select>
+                      </div>
                     )}
 
                     {!readOnly && (
@@ -759,4 +959,3 @@ export default function WpPlanEditor() {
     </div>
   );
 }
-
