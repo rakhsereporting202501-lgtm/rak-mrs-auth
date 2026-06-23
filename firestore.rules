@@ -99,6 +99,25 @@ service cloud.firestore {
         || inUserDepts(request.resource.data.ownerDeptId);
     }
 
+    /* ===== Helpers: RAK WP ===== */
+
+    function wpPlanOwner(data) {
+      return signedIn()
+        && data != null
+        && data.createdByUid == request.auth.uid;
+    }
+
+    function wpIncomingOwnerValid() {
+      return signedIn()
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.createdBy != null
+        && request.resource.data.createdBy.uid == request.auth.uid;
+    }
+
+    function wpIncomingStatusAllowed() {
+      return request.resource.data.status in ['DRAFT','SUBMITTED'];
+    }
+
     /* ===== Helpers: Request document structure ===== */
 
     function docFromDept(doc) {
@@ -524,6 +543,31 @@ service cloud.firestore {
 
     match /meta/{id} {
       allow read, write: if isAdmin();
+    }
+
+    /* RAK WP */
+    match /wpEmployees/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /wpPlans/{id} {
+      allow read: if isAdmin() || wpPlanOwner(resource.data);
+      allow create: if signedIn()
+        && wpIncomingOwnerValid()
+        && wpIncomingStatusAllowed();
+      allow update: if isAdmin()
+        || (
+             wpPlanOwner(resource.data)
+             && resource.data.status == 'DRAFT'
+             && wpIncomingOwnerValid()
+             && wpIncomingStatusAllowed()
+           );
+      allow delete: if isAdmin()
+        || (
+             wpPlanOwner(resource.data)
+             && resource.data.status == 'DRAFT'
+           );
     }
 
     /* ===== Requests ===== */

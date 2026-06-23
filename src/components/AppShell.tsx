@@ -9,8 +9,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
   const isRequestsPage = useMemo(() => loc.pathname === '/requests', [loc.pathname]);
   const isNewRequestPage = useMemo(() => loc.pathname.startsWith('/requests/new'), [loc.pathname]);
+  const isWpApp = useMemo(() => loc.pathname.startsWith('/wp'), [loc.pathname]);
+  const isWpEditorPage = useMemo(() => loc.pathname.startsWith('/wp/') && loc.pathname !== '/wp', [loc.pathname]);
   const isAr = false;
   const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
+  const appTitle = isWpApp ? 'RAK WP' : 'RAK IMS';
+  const mobileBackTo = isNewRequestPage ? '/requests' : (isWpEditorPage ? '/wp' : null);
   return (
     <div className="min-h-screen bg-white flex">
       <Sidebar open={open} onClose={() => setOpen(false)} collapsedDesktop={collapsed} />
@@ -19,7 +23,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="hidden sm:flex items-center justify-between px-4 py-3 border-b bg-white sticky top-0 z-30">
           <div className="flex items-center gap-2">
             <img src={logoSrc} className="h-7 w-7" alt="Logo" />
-            <div className="text-base font-semibold">RAK IMS</div>
+            <div className="text-base font-semibold">{appTitle}</div>
           </div>
           <button
             className="btn-ghost flex items-center gap-2"
@@ -32,17 +36,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Mobile top bar */}
         <div className="sm:hidden sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
           <div className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2">
-              {isNewRequestPage ? (
-                <Link to="/requests" className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+              {mobileBackTo ? (
+                <Link to={mobileBackTo} className="flex items-center gap-2">
                   <ChevronLeft className="h-5 w-5 icon-blue" />
                   <img src={logoSrc} className="h-7 w-7" alt="Logo" />
-                  <div className="text-base font-semibold">RAK IMS</div>
+                  <div className="text-base font-semibold">{appTitle}</div>
                 </Link>
               ) : (
                 <>
                   <img src={logoSrc} className="h-7 w-7" alt="Logo" />
-                  <div className="text-base font-semibold">RAK IMS</div>
+                  <div className="text-base font-semibold">{appTitle}</div>
                 </>
               )}
             </div>
@@ -59,7 +63,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   </svg>
                 </button>
               )}
-              {!isNewRequestPage && (
+              {!mobileBackTo && (
                 <button
                   className="btn-ghost flex items-center gap-2"
                   onClick={()=>setOpen(true)}
