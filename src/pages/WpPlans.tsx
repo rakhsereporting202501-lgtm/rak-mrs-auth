@@ -11,8 +11,14 @@ function countEmployees(plan: WpPlanDoc) {
   return (plan.groups || []).reduce((sum, group) => sum + (group.employeeIds || []).length, 0);
 }
 
-function plural(count: number, label: string) {
-  return `${count} ${label}${count === 1 ? '' : 's'}`;
+function countLabel(count: number, label: string) {
+  return `${count} ${label}`;
+}
+
+function statusLabel(status?: string) {
+  if (status === 'DRAFT') return 'مسودة';
+  if (status === 'SUBMITTED') return 'مرسلة';
+  return status || '-';
 }
 
 function planSearchText(plan: WpPlanDoc) {
@@ -100,8 +106,8 @@ export default function WpPlans() {
     }, (err) => {
       console.error('WP plans listen failed', err);
       setError(err?.code === 'permission-denied'
-        ? 'Permission denied. Publish the RAK WP Firestore rules before using this page.'
-        : (err?.message || 'Failed to load work plans.'));
+        ? 'لا توجد صلاحية لقراءة خطط العمل. تأكد من نشر قواعد Firestore الخاصة بخطط العمل.'
+        : 'تعذر تحميل خطط العمل.');
       setLoading(false);
     });
     return () => unsub();
@@ -139,7 +145,7 @@ export default function WpPlans() {
 
   const deleteDraft = async (plan: WpPlanDoc) => {
     if (plan.status !== 'DRAFT') return;
-    if (!window.confirm(`Delete draft ${plan.planCode || plan.id}?`)) return;
+    if (!window.confirm(`هل تريد حذف المسودة ${plan.planCode || plan.id}؟`)) return;
     setDeleteBusyId(plan.id);
     setError(null);
     try {
@@ -147,7 +153,7 @@ export default function WpPlans() {
       const db = getFirestore(app);
       await deleteDoc(doc(db, WP_WORK_PLANS_COLLECTION, plan.id));
     } catch (err: any) {
-      setError(err?.code === 'permission-denied' ? 'Permission denied. Only drafts can be deleted.' : (err?.message || 'Failed to delete draft.'));
+      setError(err?.code === 'permission-denied' ? 'لا توجد صلاحية. يمكن حذف المسودات فقط.' : 'تعذر حذف المسودة.');
     } finally {
       setDeleteBusyId(null);
     }
@@ -162,11 +168,11 @@ export default function WpPlans() {
           onClick={() => setFiltersOpen((open) => !open)}
         >
           <SlidersHorizontal className="h-4 w-4" />
-          <span>Search</span>
+          <span>بحث</span>
         </button>
         <button type="button" className="btn-primary inline-flex items-center justify-center gap-2" onClick={() => nav('/wp/new')}>
           <Plus className="h-4 w-4" />
-          <span>New Work Plan</span>
+          <span>خطة جديدة</span>
         </button>
       </div>
 
@@ -177,7 +183,7 @@ export default function WpPlans() {
             <input
               className="input w-full pl-9 pr-10 bg-white"
               value={qText}
-              placeholder="Search plan, project, engineer, employee"
+              placeholder="ابحث عن خطة، مشروع، مهندس، أو موظف"
               onChange={(e) => setQText(e.target.value)}
             />
             {qText && (
@@ -185,7 +191,7 @@ export default function WpPlans() {
                 type="button"
                 className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-gray-100"
                 onClick={() => setQText('')}
-                aria-label="Clear search"
+                aria-label="مسح البحث"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -193,35 +199,35 @@ export default function WpPlans() {
           </div>
           <div className="grid gap-2 sm:grid-cols-5">
             <select className="input bg-white" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
-              <option value="ALL">All statuses</option>
-              <option value="DRAFT">Draft</option>
-              <option value="SUBMITTED">Submitted</option>
+              <option value="ALL">كل الحالات</option>
+              <option value="DRAFT">مسودة</option>
+              <option value="SUBMITTED">مرسلة</option>
             </select>
             <input className="input bg-white" type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} />
             <select className="input bg-white" value={sortKey} onChange={(e) => setSortKey(e.target.value as any)}>
-              <option value="updatedAt">Last update</option>
-              <option value="workDate">Work date</option>
-              <option value="planCode">Plan ID</option>
-              <option value="groups">Groups</option>
-              <option value="employees">Employees</option>
+              <option value="updatedAt">آخر تحديث</option>
+              <option value="workDate">تاريخ العمل</option>
+              <option value="planCode">رقم الخطة</option>
+              <option value="groups">المجموعات</option>
+              <option value="employees">الموظفين</option>
             </select>
             <select className="input bg-white" value={sortDir} onChange={(e) => setSortDir(e.target.value as any)}>
-              <option value="desc">Newest first</option>
-              <option value="asc">Oldest first</option>
+              <option value="desc">الأحدث أولاً</option>
+              <option value="asc">الأقدم أولاً</option>
             </select>
-            <button type="button" className="btn-ghost bg-white" onClick={clearFilters}>Clear</button>
+            <button type="button" className="btn-ghost bg-white" onClick={clearFilters}>مسح</button>
           </div>
         </div>
       )}
 
       {error && <div className="alert alert-error">{error}</div>}
-      {loading && <div className="card p-6 text-gray-500">Loading...</div>}
+      {loading && <div className="card p-6 text-gray-500">جاري التحميل...</div>}
 
       {!loading && filteredPlans.length === 0 && (
         <div className="card p-8 text-center">
           <ClipboardList className="h-10 w-10 text-blue-600 mx-auto" />
-          <div className="mt-3 text-base font-semibold">No work plans found.</div>
-          <div className="mt-1 text-sm text-gray-500">Create a plan or adjust the search.</div>
+          <div className="mt-3 text-base font-semibold">لا توجد خطط عمل.</div>
+          <div className="mt-1 text-sm text-gray-500">أنشئ خطة جديدة أو غيّر البحث.</div>
         </div>
       )}
 
@@ -240,7 +246,7 @@ export default function WpPlans() {
                 <div className="min-w-0">
                   <div className="text-lg font-semibold text-gray-900 break-words">{plan.planCode || plan.id}</div>
                   <div className="mt-2 text-sm text-gray-600">
-                    {plural(groupCount, 'group')} - {plural(employeeCount, 'employee')}
+                    {countLabel(groupCount, 'مجموعة')} - {countLabel(employeeCount, 'موظف')}
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -253,7 +259,7 @@ export default function WpPlans() {
                         e.stopPropagation();
                         deleteDraft(plan);
                       }}
-                      aria-label="Delete draft"
+                      aria-label="حذف المسودة"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -265,14 +271,14 @@ export default function WpPlans() {
                       e.stopPropagation();
                       nav(`/wp/new?copy=${plan.id}`);
                     }}
-                    aria-label="Copy plan"
+                    aria-label="نسخ الخطة"
                   >
                     <Copy className="h-4 w-4 icon-blue" />
                   </button>
                 </div>
               </div>
               <div className="mt-auto flex justify-end pt-3">
-                <span className={`badge ${submitted ? 'status-ready' : 'status-partially_approved'}`}>{plan.status}</span>
+                <span className={`badge ${submitted ? 'status-ready' : 'status-partially_approved'}`}>{statusLabel(plan.status)}</span>
               </div>
             </div>
           );

@@ -19,7 +19,7 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
   const isAdmin = !!role?.roles?.admin;
   const showNew = !!canRequest;
   const homeHref = isWpApp ? '/wp' : '/requests';
-  const appTitle = isWpApp ? 'RAK WP' : 'RAK IMS';
+  const appTitle = isWpApp ? 'خطط العمل' : 'RAK IMS';
 
   const Item = ({ to, icon:Icon, label }:{to:string, icon:any, label:string}) => (
     <NavLink to={to} className={({isActive})=>`flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-blue-50 ${isActive?'bg-blue-50':''}`} onClick={onClose}>
@@ -45,14 +45,14 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
             <img src={logoSrc} className="h-6 w-6" alt="Logo" />
             <div className="font-semibold">{appTitle}</div>
           </Link>
-          <button className="sm:hidden btn-ghost px-3 py-1 text-sm" onClick={onClose}>Back</button>
+          <button className="sm:hidden btn-ghost px-3 py-1 text-sm" onClick={onClose}>{isWpApp ? 'رجوع' : 'Back'}</button>
         </div>
         <div className="p-3 space-y-1">
-          <Item to="/apps" icon={LayoutGrid} label={'Applications'} />
+          <Item to="/apps" icon={LayoutGrid} label={isWpApp ? 'التطبيقات' : 'Applications'} />
           {isWpApp ? (
             <>
-              <Item to="/wp" icon={ClipboardList} label={'Work Plans'} />
-              <Item to="/wp/new" icon={Plus} label={'New Work Plan'} />
+              <Item to="/wp" icon={ClipboardList} label={'خطط العمل'} />
+              <Item to="/wp/new" icon={Plus} label={'خطة جديدة'} />
             </>
           ) : (
             <>
@@ -69,9 +69,9 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
           {isAdmin && <Item to="/users/new" icon={UserPlus} label={'Create User'} />}
             </>
           )}
-          <Item to="/profile" icon={User} label={'Profile'} />
+          <Item to="/profile" icon={User} label={isWpApp ? 'الملف الشخصي' : 'Profile'} />
           <button onClick={()=>signOut(getAuth())} className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-blue-50">
-            <LogOut className="h-4 w-4 icon-blue"/><span>Sign out</span>
+            <LogOut className="h-4 w-4 icon-blue"/><span>{isWpApp ? 'تسجيل الخروج' : 'Sign out'}</span>
           </button>
         </div>
       </aside>

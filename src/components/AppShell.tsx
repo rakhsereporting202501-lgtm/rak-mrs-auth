@@ -11,9 +11,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isNewRequestPage = useMemo(() => loc.pathname.startsWith('/requests/new'), [loc.pathname]);
   const isWpApp = useMemo(() => loc.pathname.startsWith('/wp'), [loc.pathname]);
   const isWpEditorPage = useMemo(() => loc.pathname.startsWith('/wp/') && loc.pathname !== '/wp', [loc.pathname]);
-  const isAr = false;
   const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
-  const appTitle = isWpApp ? 'RAK WP' : 'RAK IMS';
+  const appTitle = isWpApp ? 'خطط العمل' : 'RAK IMS';
   const mobileBackTo = isNewRequestPage ? '/requests' : (isWpEditorPage ? '/wp' : null);
   return (
     <div className="min-h-screen bg-white flex">
@@ -30,7 +29,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             onClick={() => setCollapsed(v => !v)}
           >
             {collapsed ? <PanelLeftOpen className="h-5 w-5 icon-blue" /> : <PanelLeftClose className="h-5 w-5 icon-blue" />}
-            <span className="text-sm font-medium text-blue-700">{collapsed ? 'Show menu' : 'Hide menu'}</span>
+            <span className="text-sm font-medium text-blue-700">
+              {isWpApp ? (collapsed ? 'إظهار القائمة' : 'إخفاء القائمة') : (collapsed ? 'Show menu' : 'Hide menu')}
+            </span>
           </button>
         </div>
         {/* Mobile top bar */}
@@ -67,9 +68,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <button
                   className="btn-ghost flex items-center gap-2"
                   onClick={()=>setOpen(true)}
-                  aria-label="Menu">
+                  aria-label={isWpApp ? 'القائمة' : 'Menu'}>
                   <Menu className="h-5 w-5 icon-blue"/>
-                  <span className="text-sm font-medium text-blue-700">Menu</span>
+                  <span className="text-sm font-medium text-blue-700">{isWpApp ? 'القائمة' : 'Menu'}</span>
                 </button>
               )}
             </div>

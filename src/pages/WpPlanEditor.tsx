@@ -43,6 +43,123 @@ const positionPalette = [
   'border-lime-200 bg-lime-50 text-lime-700',
 ];
 
+const positionLabels: Record<string, string> = {
+  labourer: 'عامل',
+  pa: 'مساعد',
+  rigger: 'عامل رفع',
+  grinder: 'عامل قطع',
+  'hse officer': 'مسؤول سلامة',
+  'mechanical technician': 'فني ميكانيك',
+  '6g welder': 'لحام 6G',
+  scaffolder: 'عامل سقالات',
+  technician: 'فني',
+  'site engineer': 'مهندس موقع',
+  supervisor: 'مشرف',
+  'first aider': 'مسعف أولي',
+  electrical: 'كهرباء',
+  formen: 'فورمن',
+  'qa qc inspector': 'مفتش جودة',
+  'pickup driver': 'سائق بيك أب',
+  fabricater: 'عامل تصنيع',
+  fabricator: 'عامل تصنيع',
+  'hiab driver': 'سائق هياب',
+  'qc engineer': 'مهندس جودة',
+  '3g welder': 'لحام 3G',
+  mechanical: 'ميكانيك',
+  painter: 'صباغ',
+  'hse tl': 'قائد فريق السلامة',
+  'tractor driver': 'سائق تراكتور',
+  rescuer: 'منقذ',
+  'electrical engineer': 'مهندس كهرباء',
+  'crane driver': 'سائق كرين',
+  'mechanical engineer': 'مهندس ميكانيك',
+  'mechanical supervisor': 'مشرف ميكانيك',
+  coordinator: 'منسق',
+  electrician: 'كهربائي',
+  'lifting supervisor': 'مشرف رفع',
+  'trailer driver': 'سائق تريلة',
+  'construction manager': 'مدير إنشاءات',
+  'civil engineer': 'مهندس مدني',
+  surveyor: 'مساح',
+  storekeeper: 'أمين مخزن',
+  'store keeper': 'أمين مخزن',
+  'design engineer': 'مهندس تصميم',
+  'team lead': 'قائد فريق',
+  planner: 'مخطط',
+  'cost engineer': 'مهندس كلفة',
+  'pipe fitter': 'عامل تركيب أنابيب',
+  'vehicle inspector': 'فاحص مركبات',
+  'water tanker driver': 'سائق تانكر ماء',
+  'vaccum driver': 'سائق فاكيوم',
+  'bingo driver': 'سائق بنكو',
+  'hino driver': 'سائق هينو',
+  admin: 'إداري',
+  'fire watcher': 'مراقب حريق',
+  lead: 'قائد',
+  'pmo manager': 'مدير PMO',
+  carpenter: 'نجار',
+  'draft man': 'رسام',
+  'electrical lead': 'قائد كهرباء',
+  'assist coordinator': 'مساعد منسق',
+  'admin incharge': 'مسؤول إداري',
+  'senior storekeeper': 'أمين مخزن أقدم',
+  storeworker: 'عامل مخزن',
+  welder: 'لحام',
+  'fabrication cleaner': 'عامل تنظيف تصنيع',
+  'workshop engineer': 'مهندس ورشة',
+  sandblaster: 'عامل ساند بلاست',
+  'construction team lead': 'قائد فريق إنشاءات',
+  hse: 'سلامة',
+  'hse manager': 'مدير سلامة',
+  'journey coordinator': 'منسق رحلات',
+  'hydrovac coordinator': 'منسق هايدروفاك',
+  'lifting manager': 'مدير رفع',
+  maintenance: 'صيانة',
+  'driver - starex': 'سائق ستاركس',
+  'taractor driver': 'سائق تراكتور',
+  'jcb driver': 'سائق JCB',
+  'hydrovac driver': 'سائق هايدروفاك',
+  'logistics coordinator': 'منسق لوجستي',
+  'forklift driver': 'سائق فوركلفت',
+  'oil tanker driver': 'سائق تانكر نفط',
+  'driver water tanker': 'سائق تانكر ماء',
+  'driver starex': 'سائق ستاركس',
+  'oil station officer': 'مسؤول محطة نفط',
+  'shovel driver': 'سائق شفل',
+  'sideboom driver': 'سائق سايد بوم',
+  driver: 'سائق',
+  'material engineer': 'مهندس مواد',
+  'mechanical section head': 'رئيس قسم ميكانيك',
+  'rescue & fire watcher & first aider': 'إنقاذ ومراقبة حريق وإسعاف أولي',
+  'qa qc engineer': 'مهندس جودة',
+  'qa-qc team lead': 'قائد فريق جودة',
+  'trp supervisor': 'مشرف TRP',
+  'trp lead': 'قائد TRP',
+  rescue: 'إنقاذ',
+};
+
+const departmentLabels: Record<string, string> = {
+  'logistic department': 'قسم اللوجستك',
+  'vrp department': 'قسم VRP',
+  'fabrication department': 'قسم التصنيع',
+  'pa department': 'قسم PA',
+  'wellhead department': 'قسم Wellhead',
+  'd.w. team - pipeline': 'فريق D.W - الأنابيب',
+  'hse department': 'قسم السلامة',
+  'mechanical department': 'قسم الميكانيك',
+  'scaffolding department': 'قسم السقالات',
+  'pipeline department': 'قسم الأنابيب',
+  'electrical department': 'قسم الكهرباء',
+  'civil department': 'القسم المدني',
+  'qa/qc department': 'قسم الجودة',
+  'trp department': 'قسم TRP',
+  'hydrovac department': 'قسم الهايدروفاك',
+  'lifting department': 'قسم الرفع',
+  'design department': 'قسم التصميم',
+  'material department': 'قسم المواد',
+  'cps department': 'قسم CPS',
+};
+
 function cleanText(value: string) {
   return value.trim().replace(/\s+/g, ' ');
 }
@@ -66,6 +183,24 @@ function isEnglishProjectText(value: string) {
 function toEnglishName(value: string, fallback: string) {
   const english = value.replace(/[^A-Za-z .'-]/g, ' ').replace(/\s+/g, ' ').trim();
   return english || fallback.replace(/[^A-Za-z .'-]/g, ' ').replace(/\s+/g, ' ').trim() || 'Coordinator';
+}
+
+function statusLabel(status?: string) {
+  if (status === 'DRAFT') return 'مسودة';
+  if (status === 'SUBMITTED') return 'مرسلة';
+  return status || '-';
+}
+
+function displayPosition(value?: string) {
+  const clean = cleanText(value || '');
+  if (!clean) return 'بدون منصب';
+  return positionLabels[clean.toLowerCase()] || clean;
+}
+
+function displayDepartment(value?: string) {
+  const clean = cleanText(value || '');
+  if (!clean) return 'بدون قسم';
+  return departmentLabels[clean.toLowerCase()] || clean;
 }
 
 function manualId(prefix: string, name: string) {
@@ -92,8 +227,10 @@ function personSearchText(person: WpEmployee) {
     displayPersonName(person.fullName),
     person.memberCode,
     person.position || '',
+    displayPosition(person.position || person.assignmentPosition || ''),
     person.assignmentPosition || '',
     person.department || '',
+    displayDepartment(person.department || ''),
   ].join(' ').toLowerCase();
 }
 
@@ -112,7 +249,7 @@ function snapshotPerson(person: WpEmployee): WpEmployee {
 }
 
 function positionClass(position: string) {
-  const key = cleanText(position || 'No position');
+  const key = displayPosition(position);
   const hash = key.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
   return positionPalette[hash % positionPalette.length];
 }
@@ -129,7 +266,7 @@ function makePlanCode(monthKey: string, sequenceNo: number) {
 function groupPeopleByDepartment(people: WpEmployee[]) {
   const groups = new Map<string, WpEmployee[]>();
   people.forEach((person) => {
-    const dept = person.department || 'No department';
+    const dept = displayDepartment(person.department);
     groups.set(dept, [...(groups.get(dept) || []), person]);
   });
   return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
@@ -181,7 +318,7 @@ export default function WpPlanEditor() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const readOnly = isEdit && status === 'SUBMITTED';
-  const title = isEdit ? (readOnly ? 'View Work Plan' : 'Edit Work Plan') : 'New Work Plan';
+  const title = isEdit ? (readOnly ? 'عرض خطة العمل' : 'تعديل خطة العمل') : 'خطة عمل جديدة';
 
   useEffect(() => {
     try {
@@ -220,7 +357,7 @@ export default function WpPlanEditor() {
       try {
         const snap = await getDoc(doc(db, WP_WORK_PLANS_COLLECTION, loadId));
         if (!snap.exists()) {
-          setError('Work plan not found.');
+          setError('لم يتم العثور على خطة العمل.');
           return;
         }
         const data = { id: snap.id, ...(snap.data() as any) } as WpPlanDoc;
@@ -239,7 +376,7 @@ export default function WpPlanEditor() {
                     id: manualId('manual-engineer', name),
                     memberCode: 'MANUAL',
                     fullName: name,
-                    position: 'Engineer',
+                    position: 'مهندس',
                     department: '',
                     manual: true,
                   }));
@@ -260,8 +397,8 @@ export default function WpPlanEditor() {
         setGroups(loadedGroups);
       } catch (err: any) {
         setError(err?.code === 'permission-denied'
-          ? 'Permission denied. Publish the RAK WP Firestore rules before using this page.'
-          : (err?.message || 'Failed to load work plan.'));
+          ? 'لا توجد صلاحية لقراءة خطة العمل. تأكد من نشر قواعد Firestore الخاصة بخطط العمل.'
+          : 'تعذر تحميل خطة العمل.');
       } finally {
         setLoading(false);
       }
@@ -282,6 +419,7 @@ export default function WpPlanEditor() {
     }
     return toEnglishName(fullName, user?.email?.split('@')[0] || 'Coordinator');
   }, [isEdit, copyId, coordinatorNameEn, planOwner, fullName, user?.email]);
+  const displayCoordinatorLabel = displayCoordinatorName === 'Coordinator' ? 'منسق' : displayCoordinatorName;
 
   const engineerCandidates = useMemo(() => {
     const map = new Map<string, WpEmployee>();
@@ -292,7 +430,7 @@ export default function WpPlanEditor() {
         id: `engineer-${engineer.id}`,
         memberCode: 'ENGINEER',
         fullName: name,
-        position: cleanText(engineer.position || 'Engineer'),
+        position: cleanText(engineer.position || 'مهندس'),
         department: cleanText(engineer.department || ''),
       });
       map.set(person.fullName.toLowerCase(), person);
@@ -374,7 +512,7 @@ export default function WpPlanEditor() {
       id: manualId('manual-engineer', name),
       memberCode: 'MANUAL',
       fullName: name,
-      position: 'Engineer',
+      position: 'مهندس',
       department: '',
       manual: true,
     }));
@@ -400,7 +538,7 @@ export default function WpPlanEditor() {
   };
 
   const getPeopleResults = (group: WpAssignmentGroup, personType: PersonType) => {
-    const queryText = (personType === 'engineer' ? engineerSearch[group.id] : employeeSearch[group.id] || '').toLowerCase().trim();
+    const queryText = ((personType === 'engineer' ? engineerSearch[group.id] : employeeSearch[group.id]) || '').toLowerCase().trim();
     const tokens = queryText.split(/\s+/).filter(Boolean);
     const deptFilters = personType === 'engineer' ? engineerDeptFilters : employeeDeptFilters;
     const selected = personType === 'engineer'
@@ -442,7 +580,7 @@ export default function WpPlanEditor() {
       id: manualId('manual-engineer', name),
       memberCode: 'MANUAL',
       fullName: name,
-      position: 'Engineer',
+      position: 'مهندس',
       department: '',
       manual: true,
     });
@@ -623,15 +761,15 @@ export default function WpPlanEditor() {
   };
 
   const validate = () => {
-    if (!workDate) return 'Work date is required.';
-    if (!groups.length) return 'Add at least one group.';
+    if (!workDate) return 'تاريخ العمل مطلوب.';
+    if (!groups.length) return 'أضف مجموعة واحدة على الأقل.';
     for (let i = 0; i < groups.length; i += 1) {
       const group = groups[i];
-      const label = group.projectCode ? cleanText(group.projectCode) : `Group ${i + 1}`;
-      if (!cleanText(group.projectCode)) return `${label}: project is required.`;
-      if (!isEnglishProjectText(group.projectCode)) return `${label}: project must be written in English.`;
-      if (!getSelectedEngineers(group).length) return `${label}: select or type at least one engineer.`;
-      if (!group.employeeIds.length) return `${label}: select or type at least one employee.`;
+      const label = group.projectCode ? cleanText(group.projectCode) : `مجموعة ${i + 1}`;
+      if (!cleanText(group.projectCode)) return `${label}: المشروع مطلوب.`;
+      if (!isEnglishProjectText(group.projectCode)) return `${label}: يجب كتابة اسم المشروع باللغة الإنجليزية.`;
+      if (!getSelectedEngineers(group).length) return `${label}: اختر أو اكتب مهندس واحد على الأقل.`;
+      if (!group.employeeIds.length) return `${label}: اختر أو اكتب موظف واحد على الأقل.`;
     }
     return null;
   };
@@ -690,7 +828,7 @@ export default function WpPlanEditor() {
         await updateDoc(doc(db, WP_WORK_PLANS_COLLECTION, id), basePayload);
         setStatus(nextStatus);
         setGroups(groupsPayload.map((group, index) => ({ ...group, collapsed: index > 0 })));
-        setSuccess(nextStatus === 'SUBMITTED' ? 'Work plan submitted.' : 'Draft saved.');
+        setSuccess(nextStatus === 'SUBMITTED' ? 'تم إرسال خطة العمل.' : 'تم حفظ المسودة.');
         if (nextStatus === 'SUBMITTED') nav('/wp');
       } else {
         const monthKey = monthKeyFromDate(workDate);
@@ -723,9 +861,9 @@ export default function WpPlanEditor() {
       }
     } catch (err: any) {
       if (err?.code === 'permission-denied') {
-        setError('Permission denied. Publish the RAK WP Firestore rules before saving.');
+        setError('لا توجد صلاحية للحفظ. تأكد من نشر قواعد Firestore الخاصة بخطط العمل.');
       } else {
-        setError(err?.message || 'Failed to save work plan.');
+        setError('تعذر حفظ خطة العمل.');
       }
     } finally {
       setBusy(false);
@@ -740,8 +878,8 @@ export default function WpPlanEditor() {
     return (
       <div className="mt-2 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-xs font-semibold text-gray-500">Departments</div>
-          <button type="button" className="text-xs font-semibold text-blue-700" onClick={() => clearDeptFilters(personType)}>Clear</button>
+          <div className="text-xs font-semibold text-gray-500">الأقسام</div>
+          <button type="button" className="text-xs font-semibold text-blue-700" onClick={() => clearDeptFilters(personType)}>مسح</button>
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           {departments.map((department) => {
@@ -753,11 +891,11 @@ export default function WpPlanEditor() {
                 className={`rounded-full border px-3 py-1 text-xs font-medium ${active ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}
                 onClick={() => toggleDeptFilter(personType, department)}
               >
-                {department}
+                {displayDepartment(department)}
               </button>
             );
           })}
-          {!departments.length && <div className="text-sm text-gray-500">No departments.</div>}
+          {!departments.length && <div className="text-sm text-gray-500">لا توجد أقسام.</div>}
         </div>
       </div>
     );
@@ -779,7 +917,7 @@ export default function WpPlanEditor() {
               <input
                 className="input w-full pr-20"
                 value={value}
-                placeholder={isEngineer ? 'Search or type engineer' : 'Search or type employee'}
+                placeholder={isEngineer ? 'ابحث أو اكتب اسم مهندس' : 'ابحث أو اكتب اسم موظف'}
                 onFocus={() => setActiveDropdown(pickerKey)}
                 onChange={(event) => {
                   setActiveDropdown(pickerKey);
@@ -798,7 +936,7 @@ export default function WpPlanEditor() {
                   type="button"
                   className="absolute right-11 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-gray-100"
                   onClick={() => setValue((prev) => ({ ...prev, [group.id]: '' }))}
-                  aria-label="Clear"
+                  aria-label="مسح"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -807,7 +945,7 @@ export default function WpPlanEditor() {
                 type="button"
                 className={`absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full ${filters.length ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-500'}`}
                 onClick={() => setDeptPickerOpen((prev) => ({ ...prev, [pickerKey]: !prev[pickerKey] }))}
-                aria-label="Filter departments"
+                aria-label="فلترة الأقسام"
               >
                 <Filter className="h-4 w-4" />
               </button>
@@ -837,10 +975,10 @@ export default function WpPlanEditor() {
                             <div className="min-w-0">
                               <div className="text-sm font-semibold text-gray-900 break-words">{displayPersonName(person.fullName)}</div>
                               <div className="text-xs text-gray-500 break-words">
-                                {person.position || '-'}{person.department ? ` - ${person.department}` : ''}
+                                {displayPosition(person.position)} - {displayDepartment(person.department)}
                               </div>
                             </div>
-                            {usedElsewhere && <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700">Used</span>}
+                            {usedElsewhere && <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700">مستخدم</span>}
                           </div>
                         </button>
                       );
@@ -849,7 +987,7 @@ export default function WpPlanEditor() {
                 ))}
                 {people.length === 0 && (
                   <div className="px-3 py-3 text-sm text-gray-500">
-                    Press Enter to add typed {isEngineer ? 'engineer' : 'employee'}.
+                    اضغط Enter لإضافة {isEngineer ? 'المهندس' : 'الموظف'} المكتوب.
                   </div>
                 )}
               </div>
@@ -862,7 +1000,7 @@ export default function WpPlanEditor() {
 
   const renderSelectedPerson = (groupId: string, personType: PersonType, person: WpEmployee) => {
     const duplicate = personType === 'employee' && (employeeUseMap.get(person.id)?.count || 0) > 1;
-    const position = person.assignmentPosition || person.position || 'Position';
+    const position = person.assignmentPosition || person.position || 'بدون منصب';
     const dragTarget = { groupId, personType, personId: person.id };
     return (
       <div
@@ -881,7 +1019,7 @@ export default function WpPlanEditor() {
             <div className="text-sm font-semibold text-gray-900 break-words">{displayPersonName(person.fullName)}</div>
           </div>
           <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold ${positionClass(position)}`}>
-            {position || '-'}
+            {displayPosition(position)}
           </span>
           {!readOnly && (
             <div className="hidden sm:flex items-center gap-1">
@@ -889,7 +1027,7 @@ export default function WpPlanEditor() {
                 type="button"
                 className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-gray-200 hover:bg-gray-50"
                 onClick={() => openPositionEditor(groupId, personType, person)}
-                aria-label="Edit position"
+                aria-label="تعديل المنصب"
               >
                 <Pencil className="h-4 w-4 text-blue-600" />
               </button>
@@ -897,7 +1035,7 @@ export default function WpPlanEditor() {
                 type="button"
                 className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
                 onClick={() => removePerson(groupId, personType, person.id)}
-                aria-label="Delete"
+                aria-label="حذف"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -911,11 +1049,11 @@ export default function WpPlanEditor() {
   const filteredPositionSuggestions = positionSuggestions
     .filter((position) => {
       const query = positionQuery.toLowerCase().trim();
-      return !query || position.toLowerCase().includes(query);
+      return !query || position.toLowerCase().includes(query) || displayPosition(position).toLowerCase().includes(query);
     })
     .slice(0, 20);
 
-  if (loading) return <div className="card p-6">Loading...</div>;
+  if (loading) return <div className="card p-6">جاري التحميل...</div>;
 
   return (
     <div className="space-y-4">
@@ -924,11 +1062,11 @@ export default function WpPlanEditor() {
           <div className="text-xl font-semibold">{title}</div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-ghost" onClick={() => nav('/wp')}>Back</button>
+          <button type="button" className="btn-ghost" onClick={() => nav('/wp')}>رجوع</button>
           {isEdit && (
             <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => nav(`/wp/new?copy=${id}`)}>
               <Copy className="h-4 w-4 icon-blue" />
-              <span>Copy as New</span>
+              <span>نسخ كخطة جديدة</span>
             </button>
           )}
         </div>
@@ -936,23 +1074,23 @@ export default function WpPlanEditor() {
 
       {sourcePlanId && !isEdit && (
         <div className="card p-3 text-sm text-blue-700 bg-blue-50 border-blue-100">
-          Copied from previous plan. Review the date and assignments before saving.
+          تم النسخ من خطة سابقة. راجع التاريخ والتوزيع قبل الحفظ.
         </div>
       )}
 
       <div className="card p-4 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs text-gray-500">Plan ID</div>
-            <div className="text-xl font-semibold text-gray-900 break-words">{planCode || 'New plan'}</div>
+            <div className="text-xs text-gray-500">رقم الخطة</div>
+            <div className="text-xl font-semibold text-gray-900 break-words">{planCode || 'خطة جديدة'}</div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className={`badge ${status === 'SUBMITTED' ? 'status-ready' : 'status-partially_approved'}`}>{status}</span>
-            <span className="badge border-gray-200 bg-gray-50 text-gray-700">{displayCoordinatorName}</span>
+            <span className={`badge ${status === 'SUBMITTED' ? 'status-ready' : 'status-partially_approved'}`}>{statusLabel(status)}</span>
+            <span className="badge border-gray-200 bg-gray-50 text-gray-700">{displayCoordinatorLabel}</span>
           </div>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Work date</label>
+          <label className="block text-xs text-gray-500 mb-1">تاريخ العمل</label>
           <input
             type="date"
             className="input w-full sm:max-w-xs"
@@ -973,7 +1111,7 @@ export default function WpPlanEditor() {
         {groups.map((group, index) => {
           const selectedEngineers = getSelectedEngineers(group);
           const selectedEmployees = getSelectedEmployees(group);
-          const groupTitle = cleanText(group.projectCode) || `Group ${index + 1}`;
+          const groupTitle = cleanText(group.projectCode) || `مجموعة ${index + 1}`;
           return (
             <div key={group.id} className="card p-0 overflow-hidden">
               <div className="px-4 py-3 flex items-center justify-between gap-3">
@@ -982,12 +1120,12 @@ export default function WpPlanEditor() {
                 </button>
                 <div className="flex items-center gap-2">
                   {!readOnly && groups.length > 1 && (
-                    <button type="button" className="btn-ghost text-red-600" onClick={() => removeGroup(group.id)} aria-label="Delete group">
+                    <button type="button" className="btn-ghost text-red-600" onClick={() => removeGroup(group.id)} aria-label="حذف المجموعة">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
                   <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => toggleGroup(group.id)}>
-                    <span className="text-sm">{group.collapsed ? 'Show' : 'Hide'}</span>
+                    <span className="text-sm">{group.collapsed ? 'إظهار' : 'إخفاء'}</span>
                     <ChevronDown className={`h-4 w-4 icon-blue transition-transform ${group.collapsed ? '' : 'rotate-180'}`} />
                   </button>
                 </div>
@@ -996,32 +1134,32 @@ export default function WpPlanEditor() {
               {!group.collapsed && (
                 <div className="px-4 pb-4 space-y-5 border-t border-gray-100">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Project</label>
+                    <label className="block text-xs text-gray-500 mb-1">المشروع</label>
                     <input
                       className="input w-full"
                       list="wp-project-options"
                       value={group.projectCode}
                       disabled={readOnly}
-                      placeholder="Project name"
+                      placeholder="اسم المشروع بالإنجليزية"
                       onChange={(e) => updateGroup(group.id, { projectCode: e.target.value })}
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <label className="block text-xs text-gray-500">Engineers</label>
+                    <label className="block text-xs text-gray-500">المهندسين</label>
                     {renderPicker(group, 'engineer', index)}
                     <div className="space-y-2">
                       {selectedEngineers.map((engineer) => renderSelectedPerson(group.id, 'engineer', engineer))}
-                      {selectedEngineers.length === 0 && <div className="text-sm text-gray-500">No engineers selected.</div>}
+                      {selectedEngineers.length === 0 && <div className="text-sm text-gray-500">لم يتم اختيار مهندسين.</div>}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="block text-xs text-gray-500">Employees</label>
+                    <label className="block text-xs text-gray-500">الموظفين</label>
                     {renderPicker(group, 'employee', index)}
                     <div className="space-y-2">
                       {selectedEmployees.map((employee) => renderSelectedPerson(group.id, 'employee', employee))}
-                      {selectedEmployees.length === 0 && <div className="text-sm text-gray-500">No employees selected.</div>}
+                      {selectedEmployees.length === 0 && <div className="text-sm text-gray-500">لم يتم اختيار موظفين.</div>}
                     </div>
                   </div>
                 </div>
@@ -1034,7 +1172,7 @@ export default function WpPlanEditor() {
       {!readOnly && (
         <button type="button" className="btn-ghost w-full inline-flex items-center justify-center gap-2" onClick={addGroup}>
           <Plus className="h-4 w-4 icon-blue" />
-          <span>Add Group</span>
+          <span>إضافة مجموعة</span>
         </button>
       )}
 
@@ -1045,11 +1183,11 @@ export default function WpPlanEditor() {
         {!readOnly && (
           <>
             <button type="button" className="btn-ghost disabled:opacity-50" disabled={busy} onClick={() => savePlan('DRAFT')}>
-              {busy ? 'Saving...' : 'Save Draft'}
+              {busy ? 'جاري الحفظ...' : 'حفظ مسودة'}
             </button>
             <button type="button" className="btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={() => savePlan('SUBMITTED')}>
               <Send className="h-4 w-4" />
-              <span>{busy ? 'Submitting...' : 'Submit'}</span>
+              <span>{busy ? 'جاري الإرسال...' : 'إرسال'}</span>
             </button>
           </>
         )}
@@ -1061,14 +1199,14 @@ export default function WpPlanEditor() {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-base font-semibold text-gray-900 break-words">{editingPerson.name}</div>
-                {editingPerson.department && <div className="text-xs text-gray-500">{editingPerson.department}</div>}
+                {editingPerson.department && <div className="text-xs text-gray-500">{displayDepartment(editingPerson.department)}</div>}
               </div>
-              <button type="button" className="btn-ghost" onClick={() => setEditingPerson(null)} aria-label="Close">
+              <button type="button" className="btn-ghost" onClick={() => setEditingPerson(null)} aria-label="إغلاق">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Position</label>
+              <label className="block text-xs text-gray-500 mb-1">المنصب</label>
               <input
                 className="input w-full"
                 value={positionDraft}
@@ -1095,15 +1233,15 @@ export default function WpPlanEditor() {
                       });
                     }}
                   >
-                    {position}
+                    {displayPosition(position)}
                   </button>
                 );
               })}
-              {!filteredPositionSuggestions.length && <div className="text-sm text-gray-500">No saved positions.</div>}
+              {!filteredPositionSuggestions.length && <div className="text-sm text-gray-500">لا توجد مناصب محفوظة.</div>}
             </div>
             <div className="flex justify-end gap-2">
-              <button type="button" className="btn-ghost" onClick={() => setEditingPerson(null)}>Cancel</button>
-              <button type="button" className="btn-primary" onClick={savePositionEdit}>Save</button>
+              <button type="button" className="btn-ghost" onClick={() => setEditingPerson(null)}>إلغاء</button>
+              <button type="button" className="btn-primary" onClick={savePositionEdit}>حفظ</button>
             </div>
           </div>
         </div>
