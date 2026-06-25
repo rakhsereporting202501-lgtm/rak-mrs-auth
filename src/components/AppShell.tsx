@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import Sidebar from './Sidebar';
-import { Menu, ChevronLeft, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
+import { Menu, ChevronLeft, ChevronRight, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -14,10 +14,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
   const appTitle = isWpApp ? 'خطط العمل' : 'RAK IMS';
   const mobileBackTo = isNewRequestPage ? '/requests' : (isWpEditorPage ? '/wp' : null);
+  const BackIcon = isWpApp ? ChevronRight : ChevronLeft;
+  const CollapseOpenIcon = isWpApp ? PanelRightOpen : PanelLeftOpen;
+  const CollapseCloseIcon = isWpApp ? PanelRightClose : PanelLeftClose;
   return (
-    <div className="min-h-screen bg-white flex">
+    <div className="min-h-screen bg-white flex" dir={isWpApp ? 'rtl' : 'ltr'}>
       <Sidebar open={open} onClose={() => setOpen(false)} collapsedDesktop={collapsed} />
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Desktop top bar for menu toggle */}
         <div className="hidden sm:flex items-center justify-between px-4 py-3 border-b bg-white sticky top-0 z-30">
           <div className="flex items-center gap-2">
@@ -28,7 +31,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             className="btn-ghost flex items-center gap-2"
             onClick={() => setCollapsed(v => !v)}
           >
-            {collapsed ? <PanelLeftOpen className="h-5 w-5 icon-blue" /> : <PanelLeftClose className="h-5 w-5 icon-blue" />}
+            {collapsed ? <CollapseOpenIcon className="h-5 w-5 icon-blue" /> : <CollapseCloseIcon className="h-5 w-5 icon-blue" />}
             <span className="text-sm font-medium text-blue-700">
               {isWpApp ? (collapsed ? 'إظهار القائمة' : 'إخفاء القائمة') : (collapsed ? 'Show menu' : 'Hide menu')}
             </span>
@@ -40,7 +43,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2">
               {mobileBackTo ? (
                 <Link to={mobileBackTo} className="flex items-center gap-2">
-                  <ChevronLeft className="h-5 w-5 icon-blue" />
+                  <BackIcon className="h-5 w-5 icon-blue" />
                   <img src={logoSrc} className="h-7 w-7" alt="Logo" />
                   <div className="text-base font-semibold">{appTitle}</div>
                 </Link>

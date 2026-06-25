@@ -160,7 +160,7 @@ export default function WpPlans() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 text-right" dir="rtl">
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"
@@ -179,9 +179,9 @@ export default function WpPlans() {
       {filtersOpen && (
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
-              className="input w-full pl-9 pr-10 bg-white"
+              className="input w-full pr-9 pl-10 bg-white text-right"
               value={qText}
               placeholder="ابحث عن خطة، مشروع، مهندس، أو موظف"
               onChange={(e) => setQText(e.target.value)}
@@ -189,7 +189,7 @@ export default function WpPlans() {
             {qText && (
               <button
                 type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-gray-100"
+                className="absolute left-2 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-gray-100"
                 onClick={() => setQText('')}
                 aria-label="مسح البحث"
               >
@@ -239,7 +239,7 @@ export default function WpPlans() {
           return (
             <div
               key={plan.id}
-              className="card p-4 w-full text-left hover:shadow-md cursor-pointer min-h-[124px] flex flex-col"
+              className="card p-4 w-full text-right hover:shadow-md cursor-pointer min-h-[124px] flex flex-col"
               onClick={() => nav(`/wp/${plan.id}`)}
             >
               <div className="flex items-start justify-between gap-3">

@@ -15,7 +15,7 @@ function AppCard({ title, description, Icon, onClick }: AppCardProps) {
   return (
     <button
       type="button"
-      className="card p-6 text-left hover:shadow-md min-h-[180px] flex flex-col justify-between"
+      className="card p-6 text-right hover:shadow-md min-h-[180px] flex flex-col justify-between"
       onClick={onClick}
     >
       <div className="flex items-start justify-between gap-4">
@@ -39,7 +39,7 @@ export default function AppLauncher() {
   const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white" dir="rtl">
       <div className="max-w-5xl mx-auto px-4 py-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">

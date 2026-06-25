@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent, type TouchEvent } from 'react';
+import { useEffect, useMemo, useState, type DragEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   collection,
@@ -10,7 +10,7 @@ import {
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
-import { ChevronDown, Copy, Filter, GripVertical, Pencil, Plus, Send, Trash2, X } from 'lucide-react';
+import { ChevronDown, Copy, EyeOff, Filter, GripVertical, Keyboard, List, Pencil, Plus, Send, Trash2, X } from 'lucide-react';
 import { initFirebase } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -28,9 +28,15 @@ import {
 type Project = { id: string; nameAr?: string; nameEn?: string; name?: string; code?: string };
 type Engineer = { id: string; nameAr?: string; nameEn?: string; name?: string; position?: string; department?: string };
 type PersonType = 'engineer' | 'employee';
+type PickerMode = 'project' | 'engineer' | 'employee';
 type EditingPerson = { groupId: string; personType: PersonType; personId: string; name: string; position: string; department?: string };
 type DragInfo = { groupId: string; personType: PersonType; personId: string };
-type TouchInfo = DragInfo & { x: number; y: number };
+
+const pickerModes: { mode: PickerMode; label: string }[] = [
+  { mode: 'project', label: 'المشروع' },
+  { mode: 'engineer', label: 'المهندس' },
+  { mode: 'employee', label: 'الموظفين' },
+];
 
 const positionPalette = [
   'border-blue-200 bg-blue-50 text-blue-700',
@@ -43,123 +49,6 @@ const positionPalette = [
   'border-lime-200 bg-lime-50 text-lime-700',
 ];
 
-const positionLabels: Record<string, string> = {
-  labourer: 'عامل',
-  pa: 'مساعد',
-  rigger: 'عامل رفع',
-  grinder: 'عامل قطع',
-  'hse officer': 'مسؤول سلامة',
-  'mechanical technician': 'فني ميكانيك',
-  '6g welder': 'لحام 6G',
-  scaffolder: 'عامل سقالات',
-  technician: 'فني',
-  'site engineer': 'مهندس موقع',
-  supervisor: 'مشرف',
-  'first aider': 'مسعف أولي',
-  electrical: 'كهرباء',
-  formen: 'فورمن',
-  'qa qc inspector': 'مفتش جودة',
-  'pickup driver': 'سائق بيك أب',
-  fabricater: 'عامل تصنيع',
-  fabricator: 'عامل تصنيع',
-  'hiab driver': 'سائق هياب',
-  'qc engineer': 'مهندس جودة',
-  '3g welder': 'لحام 3G',
-  mechanical: 'ميكانيك',
-  painter: 'صباغ',
-  'hse tl': 'قائد فريق السلامة',
-  'tractor driver': 'سائق تراكتور',
-  rescuer: 'منقذ',
-  'electrical engineer': 'مهندس كهرباء',
-  'crane driver': 'سائق كرين',
-  'mechanical engineer': 'مهندس ميكانيك',
-  'mechanical supervisor': 'مشرف ميكانيك',
-  coordinator: 'منسق',
-  electrician: 'كهربائي',
-  'lifting supervisor': 'مشرف رفع',
-  'trailer driver': 'سائق تريلة',
-  'construction manager': 'مدير إنشاءات',
-  'civil engineer': 'مهندس مدني',
-  surveyor: 'مساح',
-  storekeeper: 'أمين مخزن',
-  'store keeper': 'أمين مخزن',
-  'design engineer': 'مهندس تصميم',
-  'team lead': 'قائد فريق',
-  planner: 'مخطط',
-  'cost engineer': 'مهندس كلفة',
-  'pipe fitter': 'عامل تركيب أنابيب',
-  'vehicle inspector': 'فاحص مركبات',
-  'water tanker driver': 'سائق تانكر ماء',
-  'vaccum driver': 'سائق فاكيوم',
-  'bingo driver': 'سائق بنكو',
-  'hino driver': 'سائق هينو',
-  admin: 'إداري',
-  'fire watcher': 'مراقب حريق',
-  lead: 'قائد',
-  'pmo manager': 'مدير PMO',
-  carpenter: 'نجار',
-  'draft man': 'رسام',
-  'electrical lead': 'قائد كهرباء',
-  'assist coordinator': 'مساعد منسق',
-  'admin incharge': 'مسؤول إداري',
-  'senior storekeeper': 'أمين مخزن أقدم',
-  storeworker: 'عامل مخزن',
-  welder: 'لحام',
-  'fabrication cleaner': 'عامل تنظيف تصنيع',
-  'workshop engineer': 'مهندس ورشة',
-  sandblaster: 'عامل ساند بلاست',
-  'construction team lead': 'قائد فريق إنشاءات',
-  hse: 'سلامة',
-  'hse manager': 'مدير سلامة',
-  'journey coordinator': 'منسق رحلات',
-  'hydrovac coordinator': 'منسق هايدروفاك',
-  'lifting manager': 'مدير رفع',
-  maintenance: 'صيانة',
-  'driver - starex': 'سائق ستاركس',
-  'taractor driver': 'سائق تراكتور',
-  'jcb driver': 'سائق JCB',
-  'hydrovac driver': 'سائق هايدروفاك',
-  'logistics coordinator': 'منسق لوجستي',
-  'forklift driver': 'سائق فوركلفت',
-  'oil tanker driver': 'سائق تانكر نفط',
-  'driver water tanker': 'سائق تانكر ماء',
-  'driver starex': 'سائق ستاركس',
-  'oil station officer': 'مسؤول محطة نفط',
-  'shovel driver': 'سائق شفل',
-  'sideboom driver': 'سائق سايد بوم',
-  driver: 'سائق',
-  'material engineer': 'مهندس مواد',
-  'mechanical section head': 'رئيس قسم ميكانيك',
-  'rescue & fire watcher & first aider': 'إنقاذ ومراقبة حريق وإسعاف أولي',
-  'qa qc engineer': 'مهندس جودة',
-  'qa-qc team lead': 'قائد فريق جودة',
-  'trp supervisor': 'مشرف TRP',
-  'trp lead': 'قائد TRP',
-  rescue: 'إنقاذ',
-};
-
-const departmentLabels: Record<string, string> = {
-  'logistic department': 'قسم اللوجستك',
-  'vrp department': 'قسم VRP',
-  'fabrication department': 'قسم التصنيع',
-  'pa department': 'قسم PA',
-  'wellhead department': 'قسم Wellhead',
-  'd.w. team - pipeline': 'فريق D.W - الأنابيب',
-  'hse department': 'قسم السلامة',
-  'mechanical department': 'قسم الميكانيك',
-  'scaffolding department': 'قسم السقالات',
-  'pipeline department': 'قسم الأنابيب',
-  'electrical department': 'قسم الكهرباء',
-  'civil department': 'القسم المدني',
-  'qa/qc department': 'قسم الجودة',
-  'trp department': 'قسم TRP',
-  'hydrovac department': 'قسم الهايدروفاك',
-  'lifting department': 'قسم الرفع',
-  'design department': 'قسم التصميم',
-  'material department': 'قسم المواد',
-  'cps department': 'قسم CPS',
-};
-
 function cleanText(value: string) {
   return value.trim().replace(/\s+/g, ' ');
 }
@@ -171,7 +60,17 @@ function displayPersonName(value: string) {
 }
 
 function projectDisplayName(project: Project) {
-  return cleanText(project.nameEn || project.name || project.nameAr || project.code || project.id);
+  return cleanText(project.nameEn || project.name || project.code || project.id || project.nameAr || '');
+}
+
+function projectSearchText(project: Project) {
+  return [
+    project.id,
+    project.code || '',
+    project.name || '',
+    project.nameEn || '',
+    project.nameAr || '',
+  ].join(' ').toLowerCase();
 }
 
 function isEnglishProjectText(value: string) {
@@ -193,14 +92,17 @@ function statusLabel(status?: string) {
 
 function displayPosition(value?: string) {
   const clean = cleanText(value || '');
-  if (!clean) return 'بدون منصب';
-  return positionLabels[clean.toLowerCase()] || clean;
+  return clean || 'بدون منصب';
 }
 
 function displayDepartment(value?: string) {
   const clean = cleanText(value || '');
   if (!clean) return 'بدون قسم';
-  return departmentLabels[clean.toLowerCase()] || clean;
+  return clean
+    .replace(/\s+Department$/i, '')
+    .replace(/^D\.W\.\s*Team\s*-\s*/i, 'D.W. ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function manualId(prefix: string, name: string) {
@@ -227,7 +129,6 @@ function personSearchText(person: WpEmployee) {
     displayPersonName(person.fullName),
     person.memberCode,
     person.position || '',
-    displayPosition(person.position || person.assignmentPosition || ''),
     person.assignmentPosition || '',
     person.department || '',
     displayDepartment(person.department || ''),
@@ -272,6 +173,10 @@ function groupPeopleByDepartment(people: WpEmployee[]) {
   return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
 
+function pickerKey(groupId: string, mode: PickerMode) {
+  return `${groupId}:${mode}`;
+}
+
 export default function WpPlanEditor() {
   const { user, role } = useAuth();
   const nav = useNavigate();
@@ -300,17 +205,18 @@ export default function WpPlanEditor() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [planOwner, setPlanOwner] = useState<{ createdByUid?: string; createdBy?: WpPlanDoc['createdBy'] } | null>(null);
-  const [employeeSearch, setEmployeeSearch] = useState<Record<string, string>>({});
-  const [engineerSearch, setEngineerSearch] = useState<Record<string, string>>({});
+  const [pickerModeByGroup, setPickerModeByGroup] = useState<Record<string, PickerMode>>({});
+  const [pickerSearch, setPickerSearch] = useState<Record<string, string>>({});
   const [employeeDeptFilters, setEmployeeDeptFilters] = useState<string[]>(() => normalizeDeptFilters(savedEditorFilters.employeeDeptFilters ?? savedEditorFilters.employeeDeptFilter));
   const [engineerDeptFilters, setEngineerDeptFilters] = useState<string[]>(() => normalizeDeptFilters(savedEditorFilters.engineerDeptFilters ?? savedEditorFilters.engineerDeptFilter));
-  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const [deptPickerOpen, setDeptPickerOpen] = useState<Record<string, boolean>>({});
+  const [openPickerKey, setOpenPickerKey] = useState<string | null>(null);
+  const [deptPickerOpenKey, setDeptPickerOpenKey] = useState<string | null>(null);
+  const [keyboardEnabled, setKeyboardEnabled] = useState<Record<string, boolean>>({});
+  const [isMobile, setIsMobile] = useState(false);
   const [editingPerson, setEditingPerson] = useState<EditingPerson | null>(null);
   const [positionDraft, setPositionDraft] = useState('');
   const [positionQuery, setPositionQuery] = useState('');
   const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
-  const [touchInfo, setTouchInfo] = useState<TouchInfo | null>(null);
   const [sourcePlanId, setSourcePlanId] = useState<string | null>(copyId || null);
   const [loading, setLoading] = useState(!!id || !!copyId);
   const [busy, setBusy] = useState(false);
@@ -319,6 +225,14 @@ export default function WpPlanEditor() {
 
   const readOnly = isEdit && status === 'SUBMITTED';
   const title = isEdit ? (readOnly ? 'عرض خطة العمل' : 'تعديل خطة العمل') : 'خطة عمل جديدة';
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const update = () => setIsMobile(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
 
   useEffect(() => {
     try {
@@ -376,7 +290,7 @@ export default function WpPlanEditor() {
                     id: manualId('manual-engineer', name),
                     memberCode: 'MANUAL',
                     fullName: name,
-                    position: 'مهندس',
+                    position: 'Engineer',
                     department: '',
                     manual: true,
                   }));
@@ -430,7 +344,7 @@ export default function WpPlanEditor() {
         id: `engineer-${engineer.id}`,
         memberCode: 'ENGINEER',
         fullName: name,
-        position: cleanText(engineer.position || 'مهندس'),
+        position: cleanText(engineer.position || 'Engineer'),
         department: cleanText(engineer.department || ''),
       });
       map.set(person.fullName.toLowerCase(), person);
@@ -449,11 +363,11 @@ export default function WpPlanEditor() {
   }, [engineers, employees]);
 
   const employeeDepartments = useMemo(() => (
-    Array.from(new Set(employees.map((employee) => employee.department || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
+    Array.from(new Set(employees.map((employee) => employee.department || '').filter(Boolean))).sort((a, b) => displayDepartment(a).localeCompare(displayDepartment(b)))
   ), [employees]);
 
   const engineerDepartments = useMemo(() => (
-    Array.from(new Set(engineerCandidates.map((engineer) => engineer.department || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
+    Array.from(new Set(engineerCandidates.map((engineer) => engineer.department || '').filter(Boolean))).sort((a, b) => displayDepartment(a).localeCompare(displayDepartment(b)))
   ), [engineerCandidates]);
 
   const positionSuggestions = useMemo(() => {
@@ -470,7 +384,7 @@ export default function WpPlanEditor() {
       group.employeeIds.forEach((employeeId) => {
         const current = map.get(employeeId) || { count: 0, groups: [] };
         current.count += 1;
-        current.groups.push(`Group ${idx + 1}`);
+        current.groups.push(`مجموعة ${idx + 1}`);
         map.set(employeeId, current);
       });
     });
@@ -489,19 +403,33 @@ export default function WpPlanEditor() {
       ...prev.map((group) => ({ ...group, collapsed: true })),
       { ...nextGroup, collapsed: false },
     ]);
+    setOpenPickerKey(null);
+    setDeptPickerOpenKey(null);
   };
 
   const removeGroup = (groupId: string) => {
     if (readOnly) return;
     setGroups((prev) => prev.length <= 1 ? prev : prev.filter((group) => group.id !== groupId));
+    setOpenPickerKey(null);
+    setDeptPickerOpenKey(null);
   };
 
   const toggleGroup = (groupId: string) => {
+    setOpenPickerKey(null);
+    setDeptPickerOpenKey(null);
     setGroups((prev) => prev.map((group) => (
       group.id === groupId
         ? { ...group, collapsed: !group.collapsed }
         : { ...group, collapsed: true }
     )));
+  };
+
+  const getMode = (groupId: string): PickerMode => pickerModeByGroup[groupId] || 'project';
+
+  const setMode = (groupId: string, mode: PickerMode) => {
+    setPickerModeByGroup((prev) => ({ ...prev, [groupId]: mode }));
+    setOpenPickerKey(pickerKey(groupId, mode));
+    setDeptPickerOpenKey(null);
   };
 
   const getSelectedEngineers = (group: WpAssignmentGroup) => {
@@ -512,7 +440,7 @@ export default function WpPlanEditor() {
       id: manualId('manual-engineer', name),
       memberCode: 'MANUAL',
       fullName: name,
-      position: 'مهندس',
+      position: 'Engineer',
       department: '',
       manual: true,
     }));
@@ -537,8 +465,23 @@ export default function WpPlanEditor() {
     }).filter(Boolean) as WpEmployee[];
   };
 
+  const getProjectResults = (group: WpAssignmentGroup) => {
+    const queryText = cleanText(group.projectCode || '').toLowerCase();
+    const tokens = queryText.split(/\s+/).filter(Boolean);
+    const filtered = projects.filter((project) => {
+      if (!tokens.length) return true;
+      const hay = projectSearchText(project);
+      return tokens.every((token) => hay.includes(token));
+    });
+    return filtered
+      .sort((a, b) => projectDisplayName(a).localeCompare(projectDisplayName(b)))
+      .slice(0, 80);
+  };
+
   const getPeopleResults = (group: WpAssignmentGroup, personType: PersonType) => {
-    const queryText = ((personType === 'engineer' ? engineerSearch[group.id] : employeeSearch[group.id]) || '').toLowerCase().trim();
+    const mode: PickerMode = personType;
+    const key = pickerKey(group.id, mode);
+    const queryText = cleanText(pickerSearch[key] || '').toLowerCase();
     const tokens = queryText.split(/\s+/).filter(Boolean);
     const deptFilters = personType === 'engineer' ? engineerDeptFilters : employeeDeptFilters;
     const selected = personType === 'engineer'
@@ -574,13 +517,13 @@ export default function WpPlanEditor() {
   };
 
   const addTypedEngineer = (groupId: string) => {
-    const name = cleanText(engineerSearch[groupId] || '');
+    const name = cleanText(pickerSearch[pickerKey(groupId, 'engineer')] || '');
     if (!name) return;
     addEngineerToGroup(groupId, {
       id: manualId('manual-engineer', name),
       memberCode: 'MANUAL',
       fullName: name,
-      position: 'مهندس',
+      position: 'Engineer',
       department: '',
       manual: true,
     });
@@ -600,7 +543,7 @@ export default function WpPlanEditor() {
   };
 
   const addTypedEmployee = (groupId: string) => {
-    const name = cleanText(employeeSearch[groupId] || '');
+    const name = cleanText(pickerSearch[pickerKey(groupId, 'employee')] || '');
     if (!name) return;
     addEmployeeToGroup(groupId, {
       id: manualId('manual-employee', name),
@@ -689,6 +632,12 @@ export default function WpPlanEditor() {
     setEditingPerson(null);
   };
 
+  const deleteEditingPerson = () => {
+    if (!editingPerson) return;
+    removePerson(editingPerson.groupId, editingPerson.personType, editingPerson.personId);
+    setEditingPerson(null);
+  };
+
   const reorderPerson = (groupId: string, personType: PersonType, fromId: string, toId: string) => {
     if (readOnly || fromId === toId) return;
     setGroups((prev) => prev.map((group) => {
@@ -726,38 +675,17 @@ export default function WpPlanEditor() {
     setDragInfo(null);
   };
 
-  const onTouchStartPerson = (event: TouchEvent, info: DragInfo) => {
-    if (readOnly) return;
-    const touch = event.touches[0];
-    setTouchInfo({ ...info, x: touch.clientX, y: touch.clientY });
-  };
-
-  const onTouchEndPerson = (event: TouchEvent, person: WpEmployee) => {
-    if (!touchInfo) return;
-    const touch = event.changedTouches[0];
-    const dx = touch.clientX - touchInfo.x;
-    const dy = touch.clientY - touchInfo.y;
-    const horizontal = Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.25;
-    if (horizontal) {
-      if (dx > 0) {
-        removePerson(touchInfo.groupId, touchInfo.personType, touchInfo.personId);
-      } else {
-        openPositionEditor(touchInfo.groupId, touchInfo.personType, person);
-      }
-    }
-    setTouchInfo(null);
-  };
-
-  const toggleDeptFilter = (personType: PersonType, department: string) => {
-    const setter = personType === 'engineer' ? setEngineerDeptFilters : setEmployeeDeptFilters;
+  const toggleDeptFilter = (mode: PickerMode, department: string) => {
+    if (mode === 'project') return;
+    const setter = mode === 'engineer' ? setEngineerDeptFilters : setEmployeeDeptFilters;
     setter((prev) => prev.includes(department)
       ? prev.filter((entry) => entry !== department)
       : [...prev, department]);
   };
 
-  const clearDeptFilters = (personType: PersonType) => {
-    if (personType === 'engineer') setEngineerDeptFilters([]);
-    else setEmployeeDeptFilters([]);
+  const clearDeptFilters = (mode: PickerMode) => {
+    if (mode === 'engineer') setEngineerDeptFilters([]);
+    if (mode === 'employee') setEmployeeDeptFilters([]);
   };
 
   const validate = () => {
@@ -870,16 +798,17 @@ export default function WpPlanEditor() {
     }
   };
 
-  const renderDeptPicker = (groupId: string, personType: PersonType) => {
-    const pickerKey = `${personType}-${groupId}`;
-    if (!deptPickerOpen[pickerKey]) return null;
-    const departments = personType === 'engineer' ? engineerDepartments : employeeDepartments;
-    const selected = personType === 'engineer' ? engineerDeptFilters : employeeDeptFilters;
+  const renderDeptPicker = (groupId: string, mode: PickerMode) => {
+    if (mode === 'project') return null;
+    const key = pickerKey(groupId, mode);
+    if (deptPickerOpenKey !== key) return null;
+    const departments = mode === 'engineer' ? engineerDepartments : employeeDepartments;
+    const selected = mode === 'engineer' ? engineerDeptFilters : employeeDeptFilters;
     return (
-      <div className="mt-2 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+      <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3 shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <div className="text-xs font-semibold text-gray-500">الأقسام</div>
-          <button type="button" className="text-xs font-semibold text-blue-700" onClick={() => clearDeptFilters(personType)}>مسح</button>
+          <button type="button" className="text-xs font-semibold text-blue-700" onClick={() => clearDeptFilters(mode)}>مسح</button>
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           {departments.map((department) => {
@@ -888,8 +817,8 @@ export default function WpPlanEditor() {
               <button
                 key={department}
                 type="button"
-                className={`rounded-full border px-3 py-1 text-xs font-medium ${active ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}
-                onClick={() => toggleDeptFilter(personType, department)}
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${active ? 'border-blue-500 bg-white text-blue-700' : 'border-gray-200 bg-white/80 text-gray-700'}`}
+                onClick={() => toggleDeptFilter(mode, department)}
               >
                 {displayDepartment(department)}
               </button>
@@ -901,98 +830,168 @@ export default function WpPlanEditor() {
     );
   };
 
-  const renderPicker = (group: WpAssignmentGroup, personType: PersonType, groupIndex: number) => {
-    const isEngineer = personType === 'engineer';
-    const pickerKey = `${personType}-${group.id}`;
-    const value = isEngineer ? engineerSearch[group.id] || '' : employeeSearch[group.id] || '';
-    const setValue = isEngineer ? setEngineerSearch : setEmployeeSearch;
-    const filters = isEngineer ? engineerDeptFilters : employeeDeptFilters;
-    const people = getPeopleResults(group, personType);
+  const renderProjectList = (group: WpAssignmentGroup) => {
+    const projectResults = getProjectResults(group);
+    return (
+      <div className="max-h-72 overflow-y-auto rounded-2xl border border-blue-100 bg-blue-50/80 shadow-sm">
+        {projectResults.map((project) => {
+          const projectName = projectDisplayName(project);
+          return (
+            <button
+              key={project.id}
+              type="button"
+              className="w-full text-right px-3 py-2 border-b border-blue-100 last:border-b-0 hover:bg-white"
+              onClick={() => {
+                updateGroup(group.id, { projectCode: projectName });
+                setOpenPickerKey(null);
+              }}
+            >
+              <div className="text-sm font-semibold text-gray-900 break-words">{projectName}</div>
+            </button>
+          );
+        })}
+        {!projectResults.length && (
+          <div className="px-3 py-3 text-sm text-gray-500">اضغط Enter لاستخدام النص كمشروع.</div>
+        )}
+      </div>
+    );
+  };
+
+  const renderPeopleList = (group: WpAssignmentGroup, mode: PersonType, groupIndex: number) => {
+    const people = getPeopleResults(group, mode);
     const grouped = groupPeopleByDepartment(people);
     return (
-      <div className="space-y-2">
-        {!readOnly && (
-          <>
-            <div className="relative">
-              <input
-                className="input w-full pr-20"
-                value={value}
-                placeholder={isEngineer ? 'ابحث أو اكتب اسم مهندس' : 'ابحث أو اكتب اسم موظف'}
-                onFocus={() => setActiveDropdown(pickerKey)}
-                onChange={(event) => {
-                  setActiveDropdown(pickerKey);
-                  setValue((prev) => ({ ...prev, [group.id]: event.target.value }));
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    if (isEngineer) addTypedEngineer(group.id);
-                    else addTypedEmployee(group.id);
-                  }
-                }}
-              />
-              {value && (
+      <div className="max-h-72 overflow-y-auto rounded-2xl border border-blue-100 bg-blue-50/80 shadow-sm">
+        {grouped.map(([department, entries]) => (
+          <div key={department}>
+            <div className="sticky top-0 bg-blue-100 px-3 py-2 text-xs font-semibold text-gray-600 border-b border-blue-100">
+              {department}
+            </div>
+            {entries.map((person) => {
+              const usage = mode === 'employee' ? employeeUseMap.get(person.id) : null;
+              const usedElsewhere = !!usage && usage.groups.some((label) => label !== `مجموعة ${groupIndex + 1}`);
+              return (
                 <button
+                  key={person.id}
                   type="button"
-                  className="absolute right-11 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-gray-100"
-                  onClick={() => setValue((prev) => ({ ...prev, [group.id]: '' }))}
-                  aria-label="مسح"
+                  className={`w-full text-right px-3 py-2 border-b border-blue-100 last:border-b-0 ${usedElsewhere ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-white'}`}
+                  onClick={() => {
+                    if (mode === 'engineer') addEngineerToGroup(group.id, person);
+                    else addEmployeeToGroup(group.id, person);
+                  }}
                 >
-                  <X className="h-4 w-4" />
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 break-words">{displayPersonName(person.fullName)}</div>
+                      <div className="text-xs text-gray-500 break-words">
+                        {displayPosition(person.position)} - {displayDepartment(person.department)}
+                      </div>
+                    </div>
+                    {usedElsewhere && <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700">مستخدم</span>}
+                  </div>
                 </button>
-              )}
+              );
+            })}
+          </div>
+        ))}
+        {!people.length && (
+          <div className="px-3 py-3 text-sm text-gray-500">
+            اضغط Enter لإضافة {mode === 'engineer' ? 'المهندس' : 'الموظف'} المكتوب.
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderUnifiedPicker = (group: WpAssignmentGroup, groupIndex: number) => {
+    const mode = getMode(group.id);
+    const key = pickerKey(group.id, mode);
+    const value = mode === 'project' ? group.projectCode : (pickerSearch[key] || '');
+    const listOpen = openPickerKey === key;
+    const hasDepartmentFilter = mode !== 'project' && (mode === 'engineer' ? engineerDeptFilters.length : employeeDeptFilters.length) > 0;
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          {pickerModes.map((option) => {
+            const active = mode === option.mode;
+            return (
+              <button
+                key={option.mode}
+                type="button"
+                className={`h-10 rounded-xl border text-sm font-semibold ${active ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}
+                onClick={() => setMode(group.id, option.mode)}
+                disabled={readOnly}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {!readOnly && (
+          <div className="flex items-center gap-2">
+            <input
+              className="input flex-1 text-right"
+              value={value}
+              placeholder={mode === 'project' ? 'اكتب أو اختر المشروع' : mode === 'engineer' ? 'ابحث أو اكتب اسم مهندس' : 'ابحث أو اكتب اسم موظف'}
+              disabled={readOnly}
+              readOnly={isMobile && !keyboardEnabled[group.id]}
+              inputMode={isMobile && !keyboardEnabled[group.id] ? 'none' : undefined}
+              onFocus={() => setOpenPickerKey(key)}
+              onClick={() => setOpenPickerKey(key)}
+              onChange={(event) => {
+                setOpenPickerKey(key);
+                if (mode === 'project') {
+                  updateGroup(group.id, { projectCode: event.target.value });
+                } else {
+                  setPickerSearch((prev) => ({ ...prev, [key]: event.target.value }));
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                if (mode === 'project') setOpenPickerKey(null);
+                if (mode === 'engineer') addTypedEngineer(group.id);
+                if (mode === 'employee') addTypedEmployee(group.id);
+              }}
+            />
+            {mode !== 'project' && (
               <button
                 type="button"
-                className={`absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full ${filters.length ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-500'}`}
-                onClick={() => setDeptPickerOpen((prev) => ({ ...prev, [pickerKey]: !prev[pickerKey] }))}
+                className={`h-10 w-10 inline-flex items-center justify-center rounded-xl border ${hasDepartmentFilter ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}
+                onClick={() => setDeptPickerOpenKey((prev) => prev === key ? null : key)}
                 aria-label="فلترة الأقسام"
               >
                 <Filter className="h-4 w-4" />
               </button>
-            </div>
-            {renderDeptPicker(group.id, personType)}
-            {activeDropdown === pickerKey && (
-              <div className="max-h-72 overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
-                {grouped.map(([department, entries]) => (
-                  <div key={department}>
-                    <div className="sticky top-0 bg-slate-50 px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">
-                      {department}
-                    </div>
-                    {entries.map((person) => {
-                      const usage = personType === 'employee' ? employeeUseMap.get(person.id) : null;
-                      const usedElsewhere = !!usage && usage.groups.some((label) => label !== `Group ${groupIndex + 1}`);
-                      return (
-                        <button
-                          key={person.id}
-                          type="button"
-                          className={`w-full text-left px-3 py-2 border-b border-gray-50 last:border-b-0 ${usedElsewhere ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-blue-50'}`}
-                          onClick={() => {
-                            if (isEngineer) addEngineerToGroup(group.id, person);
-                            else addEmployeeToGroup(group.id, person);
-                          }}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-gray-900 break-words">{displayPersonName(person.fullName)}</div>
-                              <div className="text-xs text-gray-500 break-words">
-                                {displayPosition(person.position)} - {displayDepartment(person.department)}
-                              </div>
-                            </div>
-                            {usedElsewhere && <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700">مستخدم</span>}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-                {people.length === 0 && (
-                  <div className="px-3 py-3 text-sm text-gray-500">
-                    اضغط Enter لإضافة {isEngineer ? 'المهندس' : 'الموظف'} المكتوب.
-                  </div>
-                )}
-              </div>
             )}
-          </>
+            <button
+              type="button"
+              className={`h-10 w-10 inline-flex items-center justify-center rounded-xl border ${listOpen ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}
+              onClick={() => setOpenPickerKey((prev) => prev === key ? null : key)}
+              aria-label={listOpen ? 'إخفاء القائمة' : 'إظهار القائمة'}
+            >
+              {listOpen ? <EyeOff className="h-4 w-4" /> : <List className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              className={`h-10 w-10 sm:hidden inline-flex items-center justify-center rounded-xl border ${keyboardEnabled[group.id] ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}
+              onClick={() => {
+                setKeyboardEnabled((prev) => ({ ...prev, [group.id]: !prev[group.id] }));
+                setOpenPickerKey(key);
+              }}
+              aria-label="لوحة المفاتيح"
+            >
+              <Keyboard className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {renderDeptPicker(group.id, mode)}
+        {listOpen && (
+          mode === 'project'
+            ? renderProjectList(group)
+            : renderPeopleList(group, mode, groupIndex)
         )}
       </div>
     );
@@ -1000,7 +999,7 @@ export default function WpPlanEditor() {
 
   const renderSelectedPerson = (groupId: string, personType: PersonType, person: WpEmployee) => {
     const duplicate = personType === 'employee' && (employeeUseMap.get(person.id)?.count || 0) > 1;
-    const position = person.assignmentPosition || person.position || 'بدون منصب';
+    const position = person.assignmentPosition || person.position || '';
     const dragTarget = { groupId, personType, personId: person.id };
     return (
       <div
@@ -1009,9 +1008,8 @@ export default function WpPlanEditor() {
         onDragStart={(event) => onDragStart(event, dragTarget)}
         onDragOver={(event) => event.preventDefault()}
         onDrop={(event) => onDropPerson(event, dragTarget)}
-        onTouchStart={(event) => onTouchStartPerson(event, dragTarget)}
-        onTouchEnd={(event) => onTouchEndPerson(event, person)}
-        className={`rounded-2xl border px-3 py-2 ${duplicate ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}
+        onClick={() => openPositionEditor(groupId, personType, person)}
+        className={`rounded-2xl border px-3 py-2 cursor-pointer ${duplicate ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}
       >
         <div className="flex items-center gap-2">
           {!readOnly && <GripVertical className="h-5 w-5 shrink-0 text-gray-400 cursor-grab" />}
@@ -1026,7 +1024,10 @@ export default function WpPlanEditor() {
               <button
                 type="button"
                 className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-gray-200 hover:bg-gray-50"
-                onClick={() => openPositionEditor(groupId, personType, person)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openPositionEditor(groupId, personType, person);
+                }}
                 aria-label="تعديل المنصب"
               >
                 <Pencil className="h-4 w-4 text-blue-600" />
@@ -1034,7 +1035,10 @@ export default function WpPlanEditor() {
               <button
                 type="button"
                 className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
-                onClick={() => removePerson(groupId, personType, person.id)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  removePerson(groupId, personType, person.id);
+                }}
                 aria-label="حذف"
               >
                 <Trash2 className="h-4 w-4" />
@@ -1049,14 +1053,14 @@ export default function WpPlanEditor() {
   const filteredPositionSuggestions = positionSuggestions
     .filter((position) => {
       const query = positionQuery.toLowerCase().trim();
-      return !query || position.toLowerCase().includes(query) || displayPosition(position).toLowerCase().includes(query);
+      return !query || position.toLowerCase().includes(query);
     })
     .slice(0, 20);
 
-  if (loading) return <div className="card p-6">جاري التحميل...</div>;
+  if (loading) return <div className="card p-6" dir="rtl">جاري التحميل...</div>;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 text-right" dir="rtl">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="text-xl font-semibold">{title}</div>
@@ -1093,19 +1097,13 @@ export default function WpPlanEditor() {
           <label className="block text-xs text-gray-500 mb-1">تاريخ العمل</label>
           <input
             type="date"
-            className="input w-full sm:max-w-xs"
+            className="input w-full sm:max-w-xs text-right"
             value={workDate}
             disabled={readOnly}
             onChange={(e) => setWorkDate(e.target.value)}
           />
         </div>
       </div>
-
-      <datalist id="wp-project-options">
-        {projects.map((project) => (
-          <option key={project.id} value={projectDisplayName(project)} />
-        ))}
-      </datalist>
 
       <div className="space-y-3">
         {groups.map((group, index) => {
@@ -1115,7 +1113,7 @@ export default function WpPlanEditor() {
           return (
             <div key={group.id} className="card p-0 overflow-hidden">
               <div className="px-4 py-3 flex items-center justify-between gap-3">
-                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleGroup(group.id)}>
+                <button type="button" className="min-w-0 flex-1 text-right" onClick={() => toggleGroup(group.id)}>
                   <div className="text-base font-semibold text-gray-900 truncate">{groupTitle}</div>
                 </button>
                 <div className="flex items-center gap-2">
@@ -1132,35 +1130,15 @@ export default function WpPlanEditor() {
               </div>
 
               {!group.collapsed && (
-                <div className="px-4 pb-4 space-y-5 border-t border-gray-100">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">المشروع</label>
-                    <input
-                      className="input w-full"
-                      list="wp-project-options"
-                      value={group.projectCode}
-                      disabled={readOnly}
-                      placeholder="اسم المشروع بالإنجليزية"
-                      onChange={(e) => updateGroup(group.id, { projectCode: e.target.value })}
-                    />
-                  </div>
+                <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
+                  {renderUnifiedPicker(group, index)}
 
                   <div className="space-y-2">
-                    <label className="block text-xs text-gray-500">المهندسين</label>
-                    {renderPicker(group, 'engineer', index)}
-                    <div className="space-y-2">
-                      {selectedEngineers.map((engineer) => renderSelectedPerson(group.id, 'engineer', engineer))}
-                      {selectedEngineers.length === 0 && <div className="text-sm text-gray-500">لم يتم اختيار مهندسين.</div>}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-xs text-gray-500">الموظفين</label>
-                    {renderPicker(group, 'employee', index)}
-                    <div className="space-y-2">
-                      {selectedEmployees.map((employee) => renderSelectedPerson(group.id, 'employee', employee))}
-                      {selectedEmployees.length === 0 && <div className="text-sm text-gray-500">لم يتم اختيار موظفين.</div>}
-                    </div>
+                    {selectedEngineers.map((engineer) => renderSelectedPerson(group.id, 'engineer', engineer))}
+                    {selectedEmployees.map((employee) => renderSelectedPerson(group.id, 'employee', employee))}
+                    {!selectedEngineers.length && !selectedEmployees.length && (
+                      <div className="text-sm text-gray-500">لم يتم اختيار مهندسين أو موظفين.</div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1201,14 +1179,19 @@ export default function WpPlanEditor() {
                 <div className="text-base font-semibold text-gray-900 break-words">{editingPerson.name}</div>
                 {editingPerson.department && <div className="text-xs text-gray-500">{displayDepartment(editingPerson.department)}</div>}
               </div>
-              <button type="button" className="btn-ghost" onClick={() => setEditingPerson(null)} aria-label="إغلاق">
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex gap-2">
+                <button type="button" className="btn-ghost border-red-200 text-red-600" onClick={deleteEditingPerson} aria-label="حذف">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+                <button type="button" className="btn-ghost" onClick={() => setEditingPerson(null)} aria-label="إغلاق">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">المنصب</label>
               <input
-                className="input w-full"
+                className="input w-full text-right"
                 value={positionDraft}
                 onChange={(event) => {
                   setPositionDraft(event.target.value);
@@ -1233,7 +1216,7 @@ export default function WpPlanEditor() {
                       });
                     }}
                   >
-                    {displayPosition(position)}
+                    {position}
                   </button>
                 );
               })}
