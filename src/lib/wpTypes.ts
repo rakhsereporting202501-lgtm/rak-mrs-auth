@@ -18,6 +18,7 @@ export type WpAssignmentGroup = {
   projectCode: string;
   projectName?: string;
   engineerNames: string[];
+  engineerSnapshots?: WpEmployee[];
   employeeIds: string[];
   employeeSnapshots: WpEmployee[];
   collapsed?: boolean;
@@ -53,18 +54,28 @@ export function makeWpGroup(): WpAssignmentGroup {
     projectCode: '',
     projectName: '',
     engineerNames: [],
+    engineerSnapshots: [],
     employeeIds: [],
     employeeSnapshots: [],
     collapsed: false,
   };
 }
 
-export function todayYmd() {
+export function dateOffsetYmd(days = 0) {
   const d = new Date();
+  d.setDate(d.getDate() + days);
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+export function todayYmd() {
+  return dateOffsetYmd(0);
+}
+
+export function tomorrowYmd() {
+  return dateOffsetYmd(1);
 }
 
 export function timestampMs(value: any): number {

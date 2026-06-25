@@ -1,21 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, deleteDoc, doc, getFirestore, limit, onSnapshot, query, where } from 'firebase/firestore';
-import { ClipboardList, Copy, Plus, Search, Trash2 } from 'lucide-react';
+import { ClipboardList, Copy, Plus, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { initFirebase } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { WpPlanDoc } from '../lib/wpTypes';
 import { timestampMs, WP_WORK_PLANS_COLLECTION } from '../lib/wpTypes';
 
-function formatDate(value: any) {
-  if (!value) return '-';
-  const d = value?.toDate ? value.toDate() : new Date(value);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString();
-}
-
 function countEmployees(plan: WpPlanDoc) {
   return (plan.groups || []).reduce((sum, group) => sum + (group.employeeIds || []).length, 0);
+}
+
+function plural(count: number, label: string) {
+  return `${count} ${label}${count === 1 ? '' : 's'}`;
 }
 
 function planSearchText(plan: WpPlanDoc) {
@@ -23,6 +20,11 @@ function planSearchText(plan: WpPlanDoc) {
     group.projectCode,
     group.projectName || '',
     ...(Array.isArray(group.engineerNames) ? group.engineerNames : []),
+    ...(group.engineerSnapshots || []).flatMap((engineer) => [
+      engineer.fullName,
+      engineer.position || '',
+      engineer.department || '',
+    ]),
     ...(group.employeeSnapshots || []).flatMap((employee) => [
       employee.fullName,
       employee.memberCode,
@@ -48,6 +50,7 @@ export default function WpPlans() {
   const [plans, setPlans] = useState<WpPlanDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const savedFilters = useMemo(() => {
     try {
       const raw = localStorage.getItem('rakWp.plans.filters');
@@ -61,8 +64,8 @@ export default function WpPlans() {
     ['ALL', 'DRAFT', 'SUBMITTED'].includes(savedFilters.statusFilter) ? savedFilters.statusFilter : 'ALL'
   ));
   const [dateFilter, setDateFilter] = useState(() => typeof savedFilters.dateFilter === 'string' ? savedFilters.dateFilter : '');
-  const [sortKey, setSortKey] = useState<'updatedAt' | 'workDate' | 'planCode' | 'coordinator' | 'status' | 'groups' | 'employees'>(() => (
-    ['updatedAt', 'workDate', 'planCode', 'coordinator', 'status', 'groups', 'employees'].includes(savedFilters.sortKey) ? savedFilters.sortKey : 'updatedAt'
+  const [sortKey, setSortKey] = useState<'updatedAt' | 'workDate' | 'planCode' | 'groups' | 'employees'>(() => (
+    ['updatedAt', 'workDate', 'planCode', 'groups', 'employees'].includes(savedFilters.sortKey) ? savedFilters.sortKey : 'updatedAt'
   ));
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => savedFilters.sortDir === 'asc' ? 'asc' : 'desc');
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
@@ -104,8 +107,6 @@ export default function WpPlans() {
     return () => unsub();
   }, [user?.uid, isAdmin]);
 
-  const draftCount = useMemo(() => plans.filter((p) => p.status === 'DRAFT').length, [plans]);
-  const submittedCount = useMemo(() => plans.filter((p) => p.status === 'SUBMITTED').length, [plans]);
   const filteredPlans = useMemo(() => {
     const tokens = qText.toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean);
     const out = plans.filter((plan) => {
@@ -119,14 +120,14 @@ export default function WpPlans() {
       const dir = sortDir === 'asc' ? 1 : -1;
       if (sortKey === 'workDate') return (a.workDate || '').localeCompare(b.workDate || '') * dir;
       if (sortKey === 'planCode') return (a.planCode || a.id || '').localeCompare(b.planCode || b.id || '') * dir;
-      if (sortKey === 'coordinator') return (a.coordinatorNameEn || a.createdBy?.fullName || '').localeCompare(b.coordinatorNameEn || b.createdBy?.fullName || '') * dir;
-      if (sortKey === 'status') return (a.status || '').localeCompare(b.status || '') * dir;
       if (sortKey === 'groups') return (((a.groups || []).length) - ((b.groups || []).length)) * dir;
       if (sortKey === 'employees') return (countEmployees(a) - countEmployees(b)) * dir;
       return (timestampMs(a.updatedAt || a.createdAt) - timestampMs(b.updatedAt || b.createdAt)) * dir;
     });
     return out;
   }, [plans, qText, statusFilter, dateFilter, sortKey, sortDir]);
+
+  const hasFilters = !!qText || statusFilter !== 'ALL' || !!dateFilter || sortKey !== 'updatedAt' || sortDir !== 'desc';
 
   const clearFilters = () => {
     setQText('');
@@ -154,65 +155,64 @@ export default function WpPlans() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <div className="text-xl font-semibold">RAK WP</div>
-          <div className="text-sm text-gray-500">Work plans</div>
-        </div>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          className={`btn-ghost inline-flex items-center justify-center gap-2 ${hasFilters ? 'border-blue-200 bg-blue-50 text-blue-700' : ''}`}
+          onClick={() => setFiltersOpen((open) => !open)}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          <span>Search</span>
+        </button>
         <button type="button" className="btn-primary inline-flex items-center justify-center gap-2" onClick={() => nav('/wp/new')}>
           <Plus className="h-4 w-4" />
           <span>New Work Plan</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <div className="card p-4">
-          <div className="text-xs text-gray-500">Total</div>
-          <div className="text-2xl font-semibold text-gray-900">{plans.length}</div>
+      {filtersOpen && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              className="input w-full pl-9 pr-10 bg-white"
+              value={qText}
+              placeholder="Search plan, project, engineer, employee"
+              onChange={(e) => setQText(e.target.value)}
+            />
+            {qText && (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-gray-100"
+                onClick={() => setQText('')}
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-5">
+            <select className="input bg-white" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
+              <option value="ALL">All statuses</option>
+              <option value="DRAFT">Draft</option>
+              <option value="SUBMITTED">Submitted</option>
+            </select>
+            <input className="input bg-white" type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} />
+            <select className="input bg-white" value={sortKey} onChange={(e) => setSortKey(e.target.value as any)}>
+              <option value="updatedAt">Last update</option>
+              <option value="workDate">Work date</option>
+              <option value="planCode">Plan ID</option>
+              <option value="groups">Groups</option>
+              <option value="employees">Employees</option>
+            </select>
+            <select className="input bg-white" value={sortDir} onChange={(e) => setSortDir(e.target.value as any)}>
+              <option value="desc">Newest first</option>
+              <option value="asc">Oldest first</option>
+            </select>
+            <button type="button" className="btn-ghost bg-white" onClick={clearFilters}>Clear</button>
+          </div>
         </div>
-        <div className="card p-4">
-          <div className="text-xs text-gray-500">Draft</div>
-          <div className="text-2xl font-semibold text-amber-600">{draftCount}</div>
-        </div>
-        <div className="card p-4 col-span-2 sm:col-span-1">
-          <div className="text-xs text-gray-500">Submitted</div>
-          <div className="text-2xl font-semibold text-green-600">{submittedCount}</div>
-        </div>
-      </div>
-
-      <div className="card p-4 space-y-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            className="input w-full pl-9"
-            value={qText}
-            placeholder="Search plan ID, coordinator, project, engineer, employee, position, or department"
-            onChange={(e) => setQText(e.target.value)}
-          />
-        </div>
-        <div className="grid gap-2 sm:grid-cols-5">
-          <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
-            <option value="ALL">All statuses</option>
-            <option value="DRAFT">Draft</option>
-            <option value="SUBMITTED">Submitted</option>
-          </select>
-          <input className="input" type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} />
-          <select className="input" value={sortKey} onChange={(e) => setSortKey(e.target.value as any)}>
-            <option value="updatedAt">Sort by last update</option>
-            <option value="workDate">Sort by work date</option>
-            <option value="planCode">Sort by plan ID</option>
-            <option value="coordinator">Sort by coordinator</option>
-            <option value="status">Sort by status</option>
-            <option value="groups">Sort by groups</option>
-            <option value="employees">Sort by employees</option>
-          </select>
-          <select className="input" value={sortDir} onChange={(e) => setSortDir(e.target.value as any)}>
-            <option value="desc">Descending</option>
-            <option value="asc">Ascending</option>
-          </select>
-          <button type="button" className="btn-ghost" onClick={clearFilters}>Clear</button>
-        </div>
-      </div>
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
       {loading && <div className="card p-6 text-gray-500">Loading...</div>}
@@ -221,32 +221,29 @@ export default function WpPlans() {
         <div className="card p-8 text-center">
           <ClipboardList className="h-10 w-10 text-blue-600 mx-auto" />
           <div className="mt-3 text-base font-semibold">No work plans found.</div>
-          <div className="mt-1 text-sm text-gray-500">Create a plan or adjust the filters.</div>
+          <div className="mt-1 text-sm text-gray-500">Create a plan or adjust the search.</div>
         </div>
       )}
 
       <div className="space-y-3">
         {filteredPlans.map((plan) => {
           const submitted = plan.status === 'SUBMITTED';
+          const employeeCount = countEmployees(plan);
+          const groupCount = (plan.groups || []).length;
           return (
             <div
               key={plan.id}
-              className="card p-4 w-full text-left hover:shadow-md cursor-pointer"
+              className="card p-4 w-full text-left hover:shadow-md cursor-pointer min-h-[124px] flex flex-col"
               onClick={() => nav(`/wp/${plan.id}`)}
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-base font-semibold text-gray-900">{plan.planCode || plan.workDate || '-'}</div>
-                    <span className={`badge ${submitted ? 'status-ready' : 'status-partially_approved'}`}>{plan.status}</span>
+                <div className="min-w-0">
+                  <div className="text-lg font-semibold text-gray-900 break-words">{plan.planCode || plan.id}</div>
+                  <div className="mt-2 text-sm text-gray-600">
+                    {plural(groupCount, 'group')} - {plural(employeeCount, 'employee')}
                   </div>
-                  <div className="mt-1 text-xs text-gray-500">{plan.workDate || '-'} - {plan.coordinatorNameEn || plan.createdBy?.fullName || '-'}</div>
-                  <div className="mt-1 text-sm text-gray-600">
-                    {(plan.groups || []).length} group{(plan.groups || []).length === 1 ? '' : 's'} - {countEmployees(plan)} employee{countEmployees(plan) === 1 ? '' : 's'}
-                  </div>
-                  <div className="mt-1 text-xs text-gray-400">Updated: {formatDate(plan.updatedAt || plan.createdAt)}</div>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                <div className="flex gap-1 shrink-0">
                   {plan.status === 'DRAFT' && (
                     <button
                       type="button"
@@ -256,9 +253,9 @@ export default function WpPlans() {
                         e.stopPropagation();
                         deleteDraft(plan);
                       }}
+                      aria-label="Delete draft"
                     >
                       <Trash2 className="h-4 w-4" />
-                      <span className="hidden sm:inline">{deleteBusyId === plan.id ? 'Deleting...' : 'Delete'}</span>
                     </button>
                   )}
                   <button
@@ -268,11 +265,14 @@ export default function WpPlans() {
                       e.stopPropagation();
                       nav(`/wp/new?copy=${plan.id}`);
                     }}
+                    aria-label="Copy plan"
                   >
                     <Copy className="h-4 w-4 icon-blue" />
-                    <span className="hidden sm:inline">Copy</span>
                   </button>
                 </div>
+              </div>
+              <div className="mt-auto flex justify-end pt-3">
+                <span className={`badge ${submitted ? 'status-ready' : 'status-partially_approved'}`}>{plan.status}</span>
               </div>
             </div>
           );

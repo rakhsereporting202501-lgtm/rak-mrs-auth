@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type DragEvent, type TouchEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   collection,
@@ -10,12 +10,12 @@ import {
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
-import { ChevronDown, Copy, Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, Copy, Filter, GripVertical, Pencil, Plus, Send, Trash2, X } from 'lucide-react';
 import { initFirebase } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import {
   makeWpGroup,
-  todayYmd,
+  tomorrowYmd,
   WP_COUNTERS_COLLECTION,
   WP_EMPLOYEE_SEED,
   WP_WORK_PLANS_COLLECTION,
@@ -25,36 +25,36 @@ import {
   type WpPlanStatus,
 } from '../lib/wpTypes';
 
-type Project = { id: string; nameAr?: string; nameEn?: string; name?: string };
-type Engineer = { id: string; nameAr?: string; nameEn?: string };
-type EngineerCandidate = { id: string; name: string; position?: string; department?: string };
+type Project = { id: string; nameAr?: string; nameEn?: string; name?: string; code?: string };
+type Engineer = { id: string; nameAr?: string; nameEn?: string; name?: string; position?: string; department?: string };
+type PersonType = 'engineer' | 'employee';
+type EditingPerson = { groupId: string; personType: PersonType; personId: string; name: string; position: string; department?: string };
+type DragInfo = { groupId: string; personType: PersonType; personId: string };
+type TouchInfo = DragInfo & { x: number; y: number };
+
+const positionPalette = [
+  'border-blue-200 bg-blue-50 text-blue-700',
+  'border-emerald-200 bg-emerald-50 text-emerald-700',
+  'border-amber-200 bg-amber-50 text-amber-700',
+  'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700',
+  'border-cyan-200 bg-cyan-50 text-cyan-700',
+  'border-rose-200 bg-rose-50 text-rose-700',
+  'border-violet-200 bg-violet-50 text-violet-700',
+  'border-lime-200 bg-lime-50 text-lime-700',
+];
 
 function cleanText(value: string) {
   return value.trim().replace(/\s+/g, ' ');
 }
 
-function employeeHaystack(employee: WpEmployee) {
-  return [
-    employee.fullName,
-    employee.memberCode,
-    employee.position || '',
-    employee.assignmentPosition || '',
-    employee.department || '',
-  ].join(' ').toLowerCase();
+function displayPersonName(value: string) {
+  const clean = cleanText(value || '');
+  const arabicParts = clean.match(/[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+)*/g);
+  return arabicParts?.join(' ').trim() || clean;
 }
 
-function splitNames(value: string): string[] {
-  return value
-    .split(/[;,،\n]/)
-    .map((part) => cleanText(part))
-    .filter(Boolean);
-}
-
-function splitNameTokens(value: string): string[] {
-  return value
-    .split(/[;,\u060C\n]/)
-    .map((part) => cleanText(part))
-    .filter(Boolean);
+function projectDisplayName(project: Project) {
+  return cleanText(project.nameEn || project.name || project.nameAr || project.code || project.id);
 }
 
 function isEnglishProjectText(value: string) {
@@ -68,19 +68,71 @@ function toEnglishName(value: string, fallback: string) {
   return english || fallback.replace(/[^A-Za-z .'-]/g, ' ').replace(/\s+/g, ' ').trim() || 'Coordinator';
 }
 
-function slugify(value: string) {
-  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  return slug || 'coordinator';
-}
-
-function manualEmployeeId(name: string) {
-  return `manual-${cleanText(name).toLowerCase()}`;
+function manualId(prefix: string, name: string) {
+  return `${prefix}-${cleanText(name).toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]+/g, '-')}`;
 }
 
 function normalizeEngineerNames(value: any): string[] {
   if (Array.isArray(value)) return value.map((entry) => cleanText(String(entry || ''))).filter(Boolean);
-  if (typeof value === 'string') return splitNameTokens(value);
+  if (typeof value === 'string') {
+    return value.split(/[;,\u060C\n]/).map((entry) => cleanText(entry)).filter(Boolean);
+  }
   return [];
+}
+
+function normalizeDeptFilters(value: any): string[] {
+  if (Array.isArray(value)) return value.map((entry) => cleanText(String(entry || ''))).filter(Boolean);
+  if (typeof value === 'string' && value) return [cleanText(value)];
+  return [];
+}
+
+function personSearchText(person: WpEmployee) {
+  return [
+    person.fullName,
+    displayPersonName(person.fullName),
+    person.memberCode,
+    person.position || '',
+    person.assignmentPosition || '',
+    person.department || '',
+  ].join(' ').toLowerCase();
+}
+
+function snapshotPerson(person: WpEmployee): WpEmployee {
+  const position = cleanText(person.assignmentPosition || person.position || '');
+  return {
+    id: person.id,
+    memberCode: person.memberCode || '',
+    fullName: cleanText(person.fullName || ''),
+    position,
+    assignmentPosition: position,
+    originalPosition: cleanText(person.originalPosition || person.position || position),
+    department: cleanText(person.department || ''),
+    manual: !!person.manual,
+  };
+}
+
+function positionClass(position: string) {
+  const key = cleanText(position || 'No position');
+  const hash = key.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return positionPalette[hash % positionPalette.length];
+}
+
+function monthKeyFromDate(workDate: string) {
+  const clean = /^\d{4}-\d{2}-\d{2}$/.test(workDate) ? workDate : tomorrowYmd();
+  return `${clean.slice(2, 4)}${clean.slice(5, 7)}`;
+}
+
+function makePlanCode(monthKey: string, sequenceNo: number) {
+  return `WP-${monthKey}${String(sequenceNo).padStart(3, '0')}`;
+}
+
+function groupPeopleByDepartment(people: WpEmployee[]) {
+  const groups = new Map<string, WpEmployee[]>();
+  people.forEach((person) => {
+    const dept = person.department || 'No department';
+    groups.set(dept, [...(groups.get(dept) || []), person]);
+  });
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
 
 export default function WpPlanEditor() {
@@ -104,7 +156,7 @@ export default function WpPlanEditor() {
 
   const [planCode, setPlanCode] = useState('');
   const [coordinatorNameEn, setCoordinatorNameEn] = useState('');
-  const [workDate, setWorkDate] = useState(todayYmd());
+  const [workDate, setWorkDate] = useState(tomorrowYmd());
   const [status, setStatus] = useState<WpPlanStatus>('DRAFT');
   const [groups, setGroups] = useState<WpAssignmentGroup[]>([makeWpGroup()]);
   const [employees] = useState<WpEmployee[]>(WP_EMPLOYEE_SEED);
@@ -112,20 +164,16 @@ export default function WpPlanEditor() {
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [planOwner, setPlanOwner] = useState<{ createdByUid?: string; createdBy?: WpPlanDoc['createdBy'] } | null>(null);
   const [employeeSearch, setEmployeeSearch] = useState<Record<string, string>>({});
-  const [engineerDraft, setEngineerDraft] = useState<Record<string, string>>({});
-  const [manualName, setManualName] = useState<Record<string, string>>({});
-  const [manualPosition, setManualPosition] = useState<Record<string, string>>({});
-  const [manualDepartment, setManualDepartment] = useState<Record<string, string>>({});
-  const [employeeDeptFilter, setEmployeeDeptFilter] = useState(() => typeof savedEditorFilters.employeeDeptFilter === 'string' ? savedEditorFilters.employeeDeptFilter : '');
-  const [employeePositionFilter, setEmployeePositionFilter] = useState(() => typeof savedEditorFilters.employeePositionFilter === 'string' ? savedEditorFilters.employeePositionFilter : '');
-  const [employeeSortKey, setEmployeeSortKey] = useState<'name' | 'position' | 'department'>(() => (
-    ['name', 'position', 'department'].includes(savedEditorFilters.employeeSortKey) ? savedEditorFilters.employeeSortKey : 'name'
-  ));
-  const [engineerDeptFilter, setEngineerDeptFilter] = useState(() => typeof savedEditorFilters.engineerDeptFilter === 'string' ? savedEditorFilters.engineerDeptFilter : '');
-  const [engineerPositionFilter, setEngineerPositionFilter] = useState(() => typeof savedEditorFilters.engineerPositionFilter === 'string' ? savedEditorFilters.engineerPositionFilter : '');
-  const [engineerSortKey, setEngineerSortKey] = useState<'name' | 'position' | 'department'>(() => (
-    ['name', 'position', 'department'].includes(savedEditorFilters.engineerSortKey) ? savedEditorFilters.engineerSortKey : 'name'
-  ));
+  const [engineerSearch, setEngineerSearch] = useState<Record<string, string>>({});
+  const [employeeDeptFilters, setEmployeeDeptFilters] = useState<string[]>(() => normalizeDeptFilters(savedEditorFilters.employeeDeptFilters ?? savedEditorFilters.employeeDeptFilter));
+  const [engineerDeptFilters, setEngineerDeptFilters] = useState<string[]>(() => normalizeDeptFilters(savedEditorFilters.engineerDeptFilters ?? savedEditorFilters.engineerDeptFilter));
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [deptPickerOpen, setDeptPickerOpen] = useState<Record<string, boolean>>({});
+  const [editingPerson, setEditingPerson] = useState<EditingPerson | null>(null);
+  const [positionDraft, setPositionDraft] = useState('');
+  const [positionQuery, setPositionQuery] = useState('');
+  const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
+  const [touchInfo, setTouchInfo] = useState<TouchInfo | null>(null);
   const [sourcePlanId, setSourcePlanId] = useState<string | null>(copyId || null);
   const [loading, setLoading] = useState(!!id || !!copyId);
   const [busy, setBusy] = useState(false);
@@ -138,15 +186,11 @@ export default function WpPlanEditor() {
   useEffect(() => {
     try {
       localStorage.setItem('rakWp.editor.filters', JSON.stringify({
-        employeeDeptFilter,
-        employeePositionFilter,
-        employeeSortKey,
-        engineerDeptFilter,
-        engineerPositionFilter,
-        engineerSortKey,
+        employeeDeptFilters,
+        engineerDeptFilters,
       }));
     } catch {}
-  }, [employeeDeptFilter, employeePositionFilter, employeeSortKey, engineerDeptFilter, engineerPositionFilter, engineerSortKey]);
+  }, [employeeDeptFilters, engineerDeptFilters]);
 
   useEffect(() => {
     let active = true;
@@ -182,26 +226,36 @@ export default function WpPlanEditor() {
         const data = { id: snap.id, ...(snap.data() as any) } as WpPlanDoc;
         setPlanCode(copyId ? '' : (data.planCode || data.id || ''));
         setCoordinatorNameEn(copyId ? '' : (data.coordinatorNameEn || ''));
-        setWorkDate(copyId ? todayYmd() : (data.workDate || todayYmd()));
+        setWorkDate(copyId ? tomorrowYmd() : (data.workDate || tomorrowYmd()));
         setStatus(copyId ? 'DRAFT' : (data.status || 'DRAFT'));
         setSourcePlanId(copyId ? data.id : (data.sourcePlanId || null));
         setPlanOwner(copyId ? null : { createdByUid: data.createdByUid, createdBy: data.createdBy });
         const loadedGroups = Array.isArray(data.groups) && data.groups.length
-          ? data.groups.map((group) => ({
-              id: `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              projectCode: group.projectCode || '',
-              projectName: group.projectName || '',
-              engineerNames: normalizeEngineerNames(group.engineerNames),
-              employeeIds: Array.isArray(group.employeeIds) ? group.employeeIds : [],
-              employeeSnapshots: Array.isArray(group.employeeSnapshots)
-                ? group.employeeSnapshots.map((employee) => ({
-                    ...employee,
-                    originalPosition: employee.originalPosition || employee.position || '',
-                    assignmentPosition: employee.assignmentPosition || employee.position || '',
-                  }))
-                : [],
-              collapsed: false,
-            }))
+          ? data.groups.map((group, index) => {
+              const engineerNames = normalizeEngineerNames(group.engineerNames);
+              const engineerSnapshots = Array.isArray(group.engineerSnapshots) && group.engineerSnapshots.length
+                ? group.engineerSnapshots.map(snapshotPerson)
+                : engineerNames.map((name) => snapshotPerson({
+                    id: manualId('manual-engineer', name),
+                    memberCode: 'MANUAL',
+                    fullName: name,
+                    position: 'Engineer',
+                    department: '',
+                    manual: true,
+                  }));
+              return {
+                id: `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                projectCode: group.projectCode || '',
+                projectName: '',
+                engineerNames: engineerSnapshots.map((engineer) => engineer.fullName),
+                engineerSnapshots,
+                employeeIds: Array.isArray(group.employeeIds) ? group.employeeIds : [],
+                employeeSnapshots: Array.isArray(group.employeeSnapshots)
+                  ? group.employeeSnapshots.map(snapshotPerson)
+                  : [],
+                collapsed: index > 0,
+              };
+            })
           : [makeWpGroup()];
         setGroups(loadedGroups);
       } catch (err: any) {
@@ -229,45 +283,48 @@ export default function WpPlanEditor() {
     return toEnglishName(fullName, user?.email?.split('@')[0] || 'Coordinator');
   }, [isEdit, copyId, coordinatorNameEn, planOwner, fullName, user?.email]);
 
-  const employeeDepartments = useMemo(() => (
-    Array.from(new Set(employees.map((employee) => employee.department || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
-  ), [employees]);
-
-  const employeePositions = useMemo(() => (
-    Array.from(new Set(employees.map((employee) => employee.position || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
-  ), [employees]);
-
   const engineerCandidates = useMemo(() => {
-    const map = new Map<string, EngineerCandidate>();
+    const map = new Map<string, WpEmployee>();
     engineers.forEach((engineer) => {
-      const name = cleanText(engineer.nameEn || engineer.nameAr || engineer.id);
+      const name = cleanText(engineer.nameAr || engineer.nameEn || engineer.name || engineer.id);
       if (!name) return;
-      map.set(name.toLowerCase(), { id: `engineer-${engineer.id}`, name, position: 'Engineer', department: '' });
+      const person = snapshotPerson({
+        id: `engineer-${engineer.id}`,
+        memberCode: 'ENGINEER',
+        fullName: name,
+        position: cleanText(engineer.position || 'Engineer'),
+        department: cleanText(engineer.department || ''),
+      });
+      map.set(person.fullName.toLowerCase(), person);
     });
     employees.forEach((employee) => {
       const position = employee.position || '';
       const name = employee.fullName || '';
       if (!/engineer/i.test(`${position} ${name}`)) return;
-      const key = name.toLowerCase();
-      if (!map.has(key)) {
-        map.set(key, {
-          id: `employee-${employee.id}`,
-          name,
-          position,
-          department: employee.department || '',
-        });
-      }
+      const snapshot = snapshotPerson({
+        ...employee,
+        id: `employee-${employee.id}`,
+      });
+      if (!map.has(snapshot.fullName.toLowerCase())) map.set(snapshot.fullName.toLowerCase(), snapshot);
     });
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) => displayPersonName(a.fullName).localeCompare(displayPersonName(b.fullName)));
   }, [engineers, employees]);
+
+  const employeeDepartments = useMemo(() => (
+    Array.from(new Set(employees.map((employee) => employee.department || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  ), [employees]);
 
   const engineerDepartments = useMemo(() => (
     Array.from(new Set(engineerCandidates.map((engineer) => engineer.department || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
   ), [engineerCandidates]);
 
-  const engineerPositions = useMemo(() => (
-    Array.from(new Set(engineerCandidates.map((engineer) => engineer.position || '').filter(Boolean))).sort((a, b) => a.localeCompare(b))
-  ), [engineerCandidates]);
+  const positionSuggestions = useMemo(() => {
+    const all = [
+      ...employees.map((employee) => employee.position || ''),
+      ...engineerCandidates.map((engineer) => engineer.position || ''),
+    ].map(cleanText).filter(Boolean);
+    return Array.from(new Set(all)).sort((a, b) => a.localeCompare(b));
+  }, [employees, engineerCandidates]);
 
   const employeeUseMap = useMemo(() => {
     const map = new Map<string, { count: number; groups: string[] }>();
@@ -289,7 +346,11 @@ export default function WpPlanEditor() {
 
   const addGroup = () => {
     if (readOnly) return;
-    setGroups((prev) => [...prev, makeWpGroup()]);
+    const nextGroup = makeWpGroup();
+    setGroups((prev) => [
+      ...prev.map((group) => ({ ...group, collapsed: true })),
+      { ...nextGroup, collapsed: false },
+    ]);
   };
 
   const removeGroup = (groupId: string) => {
@@ -298,148 +359,24 @@ export default function WpPlanEditor() {
   };
 
   const toggleGroup = (groupId: string) => {
-    setGroups((prev) => prev.map((group) => group.id === groupId ? { ...group, collapsed: !group.collapsed } : group));
-  };
-
-  const addEngineerName = (groupId: string, name: string) => {
-    if (readOnly) return;
-    const cleanName = cleanText(name);
-    if (!cleanName) return;
-    setGroups((prev) => prev.map((group) => {
-      if (group.id !== groupId) return group;
-      const merged = Array.from(new Set([...(group.engineerNames || []), cleanName]));
-      return { ...group, engineerNames: merged };
-    }));
-    setEngineerDraft((prev) => ({ ...prev, [groupId]: '' }));
-  };
-
-  const addEngineer = (groupId: string) => {
-    if (readOnly) return;
-    const names = splitNameTokens(engineerDraft[groupId] || '');
-    if (!names.length) return;
-    setGroups((prev) => prev.map((group) => {
-      if (group.id !== groupId) return group;
-      const merged = Array.from(new Set([...(group.engineerNames || []), ...names]));
-      return { ...group, engineerNames: merged };
-    }));
-    setEngineerDraft((prev) => ({ ...prev, [groupId]: '' }));
-  };
-
-  const getEngineerResults = (group: WpAssignmentGroup) => {
-    const selected = new Set(group.engineerNames.map((name) => name.toLowerCase()));
-    const queryText = (engineerDraft[group.id] || '').toLowerCase().trim();
-    const tokens = queryText.split(/\s+/).filter(Boolean);
-    const filtered = engineerCandidates
-      .filter((engineer) => !selected.has(engineer.name.toLowerCase()))
-      .filter((engineer) => !engineerDeptFilter || engineer.department === engineerDeptFilter)
-      .filter((engineer) => !engineerPositionFilter || engineer.position === engineerPositionFilter)
-      .filter((engineer) => {
-        if (!tokens.length) return true;
-        const hay = [engineer.name, engineer.position || '', engineer.department || ''].join(' ').toLowerCase();
-        return tokens.every((token) => hay.includes(token));
-      });
-    filtered.sort((a, b) => {
-      if (engineerSortKey === 'position') {
-        const cmp = (a.position || '').localeCompare(b.position || '');
-        if (cmp) return cmp;
-      }
-      if (engineerSortKey === 'department') {
-        const cmp = (a.department || '').localeCompare(b.department || '');
-        if (cmp) return cmp;
-      }
-      return a.name.localeCompare(b.name);
-    });
-    return filtered.slice(0, 40);
-  };
-
-  const removeEngineer = (groupId: string, name: string) => {
-    if (readOnly) return;
     setGroups((prev) => prev.map((group) => (
       group.id === groupId
-        ? { ...group, engineerNames: group.engineerNames.filter((entry) => entry !== name) }
-        : group
+        ? { ...group, collapsed: !group.collapsed }
+        : { ...group, collapsed: true }
     )));
   };
 
-  const snapshotEmployee = (employee: WpEmployee): WpEmployee => ({
-    id: employee.id,
-    memberCode: employee.memberCode,
-    fullName: employee.fullName,
-    position: employee.assignmentPosition || employee.position || '',
-    assignmentPosition: employee.assignmentPosition || employee.position || '',
-    originalPosition: employee.originalPosition || employee.position || '',
-    department: employee.department || '',
-    manual: !!employee.manual,
-  });
-
-  const addEmployeeToGroup = (groupId: string, employee: WpEmployee) => {
-    if (readOnly) return;
-    const snapshot = snapshotEmployee(employee);
-    setGroups((prev) => prev.map((group) => {
-      if (group.id !== groupId || group.employeeIds.includes(snapshot.id)) return group;
-      return {
-        ...group,
-        employeeIds: [...group.employeeIds, snapshot.id],
-        employeeSnapshots: [...group.employeeSnapshots.filter((e) => e.id !== snapshot.id), snapshot],
-      };
-    }));
-    setEmployeeSearch((prev) => ({ ...prev, [groupId]: '' }));
-  };
-
-  const addManualEmployeeToGroup = (groupId: string) => {
-    if (readOnly) return;
-    const name = cleanText(manualName[groupId] || '');
-    if (!name) return;
-    const position = cleanText(manualPosition[groupId] || '');
-    const department = cleanText(manualDepartment[groupId] || '');
-    const employee: WpEmployee = {
-      id: manualEmployeeId(name),
+  const getSelectedEngineers = (group: WpAssignmentGroup) => {
+    if (Array.isArray(group.engineerSnapshots) && group.engineerSnapshots.length) {
+      return group.engineerSnapshots.map(snapshotPerson);
+    }
+    return group.engineerNames.map((name) => snapshotPerson({
+      id: manualId('manual-engineer', name),
       memberCode: 'MANUAL',
       fullName: name,
-      position,
-      assignmentPosition: position,
-      originalPosition: position,
-      department,
+      position: 'Engineer',
+      department: '',
       manual: true,
-    };
-    addEmployeeToGroup(groupId, employee);
-    setManualName((prev) => ({ ...prev, [groupId]: '' }));
-    setManualPosition((prev) => ({ ...prev, [groupId]: '' }));
-    setManualDepartment((prev) => ({ ...prev, [groupId]: '' }));
-  };
-
-  const removeEmployeeFromGroup = (groupId: string, employeeId: string) => {
-    if (readOnly) return;
-    setGroups((prev) => prev.map((group) => {
-      if (group.id !== groupId) return group;
-      return {
-        ...group,
-        employeeIds: group.employeeIds.filter((idValue) => idValue !== employeeId),
-        employeeSnapshots: group.employeeSnapshots.filter((employee) => employee.id !== employeeId),
-      };
-    }));
-  };
-
-  const updateEmployeePosition = (groupId: string, employeeId: string, position: string) => {
-    if (readOnly) return;
-    setGroups((prev) => prev.map((group) => {
-      if (group.id !== groupId) return group;
-      const existing = group.employeeSnapshots.find((employee) => employee.id === employeeId)
-        || employeeById.get(employeeId);
-      if (!existing) return group;
-      const nextSnapshot = {
-        ...snapshotEmployee(existing),
-        position,
-        assignmentPosition: position,
-        originalPosition: existing.originalPosition || existing.position || '',
-      };
-      return {
-        ...group,
-        employeeSnapshots: [
-          ...group.employeeSnapshots.filter((employee) => employee.id !== employeeId),
-          nextSnapshot,
-        ],
-      };
     }));
   };
 
@@ -448,7 +385,7 @@ export default function WpPlanEditor() {
       const snapshot = group.employeeSnapshots.find((employee) => employee.id === employeeId);
       const base = employeeById.get(employeeId);
       if (!snapshot && !base) return null;
-      return {
+      return snapshotPerson({
         ...(base || {}),
         ...(snapshot || {}),
         id: employeeId,
@@ -458,37 +395,231 @@ export default function WpPlanEditor() {
         assignmentPosition: snapshot?.assignmentPosition || snapshot?.position || base?.position || '',
         originalPosition: snapshot?.originalPosition || base?.position || snapshot?.position || '',
         department: snapshot?.department || base?.department || '',
-      } as WpEmployee;
+      } as WpEmployee);
     }).filter(Boolean) as WpEmployee[];
   };
 
-  const getEmployeeResults = (group: WpAssignmentGroup) => {
-    const selectedInCurrent = new Set(group.employeeIds);
-    const queryText = (employeeSearch[group.id] || '').toLowerCase().trim();
+  const getPeopleResults = (group: WpAssignmentGroup, personType: PersonType) => {
+    const queryText = (personType === 'engineer' ? engineerSearch[group.id] : employeeSearch[group.id] || '').toLowerCase().trim();
     const tokens = queryText.split(/\s+/).filter(Boolean);
-    const available = employees
-      .filter((employee) => !selectedInCurrent.has(employee.id))
-      .filter((employee) => !employeeDeptFilter || employee.department === employeeDeptFilter)
-      .filter((employee) => !employeePositionFilter || employee.position === employeePositionFilter);
-    const filtered = !tokens.length
-      ? available
-      : available
-      .filter((employee) => {
-        const hay = employeeHaystack(employee);
+    const deptFilters = personType === 'engineer' ? engineerDeptFilters : employeeDeptFilters;
+    const selected = personType === 'engineer'
+      ? new Set(getSelectedEngineers(group).map((engineer) => engineer.id))
+      : new Set(group.employeeIds);
+    const source = personType === 'engineer' ? engineerCandidates : employees.map(snapshotPerson);
+    const filtered = source
+      .filter((person) => !selected.has(person.id))
+      .filter((person) => !deptFilters.length || deptFilters.includes(person.department || ''))
+      .filter((person) => {
+        if (!tokens.length) return true;
+        const hay = personSearchText(person);
         return tokens.every((token) => hay.includes(token));
-      });
-    filtered.sort((a, b) => {
-      if (employeeSortKey === 'position') {
-        const cmp = (a.position || '').localeCompare(b.position || '');
-        if (cmp) return cmp;
-      }
-      if (employeeSortKey === 'department') {
-        const cmp = (a.department || '').localeCompare(b.department || '');
-        if (cmp) return cmp;
-      }
-      return a.fullName.localeCompare(b.fullName);
+      })
+      .sort((a, b) => displayPersonName(a.fullName).localeCompare(displayPersonName(b.fullName)));
+    return filtered.slice(0, 80);
+  };
+
+  const addEngineerToGroup = (groupId: string, engineer: WpEmployee) => {
+    if (readOnly) return;
+    const snapshot = snapshotPerson(engineer);
+    setGroups((prev) => prev.map((group) => {
+      if (group.id !== groupId) return group;
+      const selected = getSelectedEngineers(group);
+      if (selected.some((entry) => entry.id === snapshot.id)) return group;
+      const nextEngineers = [...selected, snapshot];
+      return {
+        ...group,
+        engineerNames: nextEngineers.map((entry) => entry.fullName),
+        engineerSnapshots: nextEngineers,
+      };
+    }));
+  };
+
+  const addTypedEngineer = (groupId: string) => {
+    const name = cleanText(engineerSearch[groupId] || '');
+    if (!name) return;
+    addEngineerToGroup(groupId, {
+      id: manualId('manual-engineer', name),
+      memberCode: 'MANUAL',
+      fullName: name,
+      position: 'Engineer',
+      department: '',
+      manual: true,
     });
-    return filtered.slice(0, tokens.length ? 40 : 25);
+  };
+
+  const addEmployeeToGroup = (groupId: string, employee: WpEmployee) => {
+    if (readOnly) return;
+    const snapshot = snapshotPerson(employee);
+    setGroups((prev) => prev.map((group) => {
+      if (group.id !== groupId || group.employeeIds.includes(snapshot.id)) return group;
+      return {
+        ...group,
+        employeeIds: [...group.employeeIds, snapshot.id],
+        employeeSnapshots: [...group.employeeSnapshots.filter((entry) => entry.id !== snapshot.id), snapshot],
+      };
+    }));
+  };
+
+  const addTypedEmployee = (groupId: string) => {
+    const name = cleanText(employeeSearch[groupId] || '');
+    if (!name) return;
+    addEmployeeToGroup(groupId, {
+      id: manualId('manual-employee', name),
+      memberCode: 'MANUAL',
+      fullName: name,
+      position: '',
+      department: '',
+      manual: true,
+    });
+  };
+
+  const removePerson = (groupId: string, personType: PersonType, personId: string) => {
+    if (readOnly) return;
+    setGroups((prev) => prev.map((group) => {
+      if (group.id !== groupId) return group;
+      if (personType === 'engineer') {
+        const nextEngineers = getSelectedEngineers(group).filter((engineer) => engineer.id !== personId);
+        return {
+          ...group,
+          engineerNames: nextEngineers.map((engineer) => engineer.fullName),
+          engineerSnapshots: nextEngineers,
+        };
+      }
+      return {
+        ...group,
+        employeeIds: group.employeeIds.filter((idValue) => idValue !== personId),
+        employeeSnapshots: group.employeeSnapshots.filter((employee) => employee.id !== personId),
+      };
+    }));
+  };
+
+  const updatePersonPosition = (groupId: string, personType: PersonType, personId: string, position: string) => {
+    if (readOnly) return;
+    const cleanPosition = cleanText(position);
+    setGroups((prev) => prev.map((group) => {
+      if (group.id !== groupId) return group;
+      if (personType === 'engineer') {
+        const nextEngineers = getSelectedEngineers(group).map((engineer) => (
+          engineer.id === personId
+            ? { ...engineer, position: cleanPosition, assignmentPosition: cleanPosition }
+            : engineer
+        ));
+        return {
+          ...group,
+          engineerNames: nextEngineers.map((engineer) => engineer.fullName),
+          engineerSnapshots: nextEngineers,
+        };
+      }
+      const existing = group.employeeSnapshots.find((employee) => employee.id === personId)
+        || employeeById.get(personId);
+      if (!existing) return group;
+      const nextSnapshot = {
+        ...snapshotPerson(existing),
+        position: cleanPosition,
+        assignmentPosition: cleanPosition,
+        originalPosition: existing.originalPosition || existing.position || '',
+      };
+      return {
+        ...group,
+        employeeSnapshots: [
+          ...group.employeeSnapshots.filter((employee) => employee.id !== personId),
+          nextSnapshot,
+        ],
+      };
+    }));
+  };
+
+  const openPositionEditor = (groupId: string, personType: PersonType, person: WpEmployee) => {
+    if (readOnly) return;
+    const position = person.assignmentPosition || person.position || '';
+    setEditingPerson({
+      groupId,
+      personType,
+      personId: person.id,
+      name: displayPersonName(person.fullName),
+      position,
+      department: person.department || '',
+    });
+    setPositionDraft(position);
+    setPositionQuery('');
+  };
+
+  const savePositionEdit = () => {
+    if (!editingPerson) return;
+    updatePersonPosition(editingPerson.groupId, editingPerson.personType, editingPerson.personId, positionDraft);
+    setEditingPerson(null);
+  };
+
+  const reorderPerson = (groupId: string, personType: PersonType, fromId: string, toId: string) => {
+    if (readOnly || fromId === toId) return;
+    setGroups((prev) => prev.map((group) => {
+      if (group.id !== groupId) return group;
+      if (personType === 'engineer') {
+        const current = getSelectedEngineers(group);
+        const fromIndex = current.findIndex((person) => person.id === fromId);
+        const toIndex = current.findIndex((person) => person.id === toId);
+        if (fromIndex < 0 || toIndex < 0) return group;
+        const next = [...current];
+        const [moved] = next.splice(fromIndex, 1);
+        next.splice(toIndex, 0, moved);
+        return { ...group, engineerNames: next.map((person) => person.fullName), engineerSnapshots: next };
+      }
+      const fromIndex = group.employeeIds.indexOf(fromId);
+      const toIndex = group.employeeIds.indexOf(toId);
+      if (fromIndex < 0 || toIndex < 0) return group;
+      const nextIds = [...group.employeeIds];
+      const [moved] = nextIds.splice(fromIndex, 1);
+      nextIds.splice(toIndex, 0, moved);
+      return { ...group, employeeIds: nextIds };
+    }));
+  };
+
+  const onDragStart = (event: DragEvent, info: DragInfo) => {
+    if (readOnly) return;
+    event.dataTransfer.effectAllowed = 'move';
+    setDragInfo(info);
+  };
+
+  const onDropPerson = (event: DragEvent, target: DragInfo) => {
+    event.preventDefault();
+    if (!dragInfo || dragInfo.groupId !== target.groupId || dragInfo.personType !== target.personType) return;
+    reorderPerson(target.groupId, target.personType, dragInfo.personId, target.personId);
+    setDragInfo(null);
+  };
+
+  const onTouchStartPerson = (event: TouchEvent, info: DragInfo) => {
+    if (readOnly) return;
+    const touch = event.touches[0];
+    setTouchInfo({ ...info, x: touch.clientX, y: touch.clientY });
+  };
+
+  const onTouchEndPerson = (event: TouchEvent, person: WpEmployee) => {
+    if (!touchInfo) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - touchInfo.x;
+    const dy = touch.clientY - touchInfo.y;
+    const horizontal = Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.25;
+    if (horizontal) {
+      if (dx > 0) {
+        removePerson(touchInfo.groupId, touchInfo.personType, touchInfo.personId);
+      } else {
+        openPositionEditor(touchInfo.groupId, touchInfo.personType, person);
+      }
+    }
+    setTouchInfo(null);
+  };
+
+  const toggleDeptFilter = (personType: PersonType, department: string) => {
+    const setter = personType === 'engineer' ? setEngineerDeptFilters : setEmployeeDeptFilters;
+    setter((prev) => prev.includes(department)
+      ? prev.filter((entry) => entry !== department)
+      : [...prev, department]);
+  };
+
+  const clearDeptFilters = (personType: PersonType) => {
+    if (personType === 'engineer') setEngineerDeptFilters([]);
+    else setEmployeeDeptFilters([]);
   };
 
   const validate = () => {
@@ -496,12 +627,10 @@ export default function WpPlanEditor() {
     if (!groups.length) return 'Add at least one group.';
     for (let i = 0; i < groups.length; i += 1) {
       const group = groups[i];
-      const label = `Group ${i + 1}`;
+      const label = group.projectCode ? cleanText(group.projectCode) : `Group ${i + 1}`;
       if (!cleanText(group.projectCode)) return `${label}: project is required.`;
-      if (!isEnglishProjectText(group.projectCode) || !isEnglishProjectText(group.projectName || '')) {
-        return `${label}: project must be written in English.`;
-      }
-      if (!group.engineerNames.length) return `${label}: select or type at least one engineer.`;
+      if (!isEnglishProjectText(group.projectCode)) return `${label}: project must be written in English.`;
+      if (!getSelectedEngineers(group).length) return `${label}: select or type at least one engineer.`;
       if (!group.employeeIds.length) return `${label}: select or type at least one employee.`;
     }
     return null;
@@ -509,26 +638,16 @@ export default function WpPlanEditor() {
 
   const buildGroupsPayload = () => {
     return groups.map((group) => {
-      const snapshots = getSelectedEmployees(group);
+      const engineersPayload = getSelectedEngineers(group).map(snapshotPerson);
+      const employeesPayload = getSelectedEmployees(group).map(snapshotPerson);
       return {
         id: group.id,
         projectCode: cleanText(group.projectCode),
-        projectName: cleanText(group.projectName || ''),
-        engineerNames: group.engineerNames.map(cleanText).filter(Boolean),
-        employeeIds: snapshots.map((employee) => employee.id),
-        employeeSnapshots: snapshots.map((employee) => {
-          const effectivePosition = employee.assignmentPosition || employee.position || '';
-          return {
-            id: employee.id,
-            memberCode: employee.memberCode,
-            fullName: employee.fullName,
-            position: effectivePosition,
-            assignmentPosition: effectivePosition,
-            originalPosition: employee.originalPosition || employee.position || '',
-            department: employee.department || '',
-            manual: !!employee.manual,
-          };
-        }),
+        projectName: '',
+        engineerNames: engineersPayload.map((engineer) => engineer.fullName),
+        engineerSnapshots: engineersPayload,
+        employeeIds: employeesPayload.map((employee) => employee.id),
+        employeeSnapshots: employeesPayload,
       };
     });
   };
@@ -570,29 +689,27 @@ export default function WpPlanEditor() {
       if (isEdit && id) {
         await updateDoc(doc(db, WP_WORK_PLANS_COLLECTION, id), basePayload);
         setStatus(nextStatus);
-        setGroups(groupsPayload.map((group) => ({ ...group, collapsed: false })));
+        setGroups(groupsPayload.map((group, index) => ({ ...group, collapsed: index > 0 })));
         setSuccess(nextStatus === 'SUBMITTED' ? 'Work plan submitted.' : 'Draft saved.');
         if (nextStatus === 'SUBMITTED') nav('/wp');
       } else {
-        const dateKey = workDate.replace(/-/g, '');
-        const coordinatorSlug = slugify(coordinatorNameEn);
+        const monthKey = monthKeyFromDate(workDate);
         const planId = await runTransaction(db, async (tx) => {
-          const counterRef = doc(db, WP_COUNTERS_COLLECTION, `${coordinatorSlug}-${dateKey}`);
+          const counterRef = doc(db, WP_COUNTERS_COLLECTION, `wp-${monthKey}`);
           const counterSnap = await tx.get(counterRef);
           const next = counterSnap.exists() ? Number((counterSnap.data() as any).next || 1) : 1;
           const seq = Math.max(1, next);
-          const seqText = String(seq).padStart(3, '0');
-          const newPlanId = `wp-${coordinatorSlug}-${dateKey}-${seqText}`;
+          const generatedCode = makePlanCode(monthKey, seq);
+          const newPlanId = generatedCode.toLowerCase();
           const planRef = doc(db, WP_WORK_PLANS_COLLECTION, newPlanId);
           tx.set(counterRef, {
             next: seq + 1,
-            dateKey,
-            coordinatorNameEn,
+            monthKey,
             updatedAt: serverTimestamp(),
           }, { merge: true });
           tx.set(planRef, {
             ...basePayload,
-            planCode: `${coordinatorSlug.toUpperCase()}-${dateKey}-${seqText}`,
+            planCode: generatedCode,
             sequenceNo: seq,
             createdAt: serverTimestamp(),
           });
@@ -615,6 +732,189 @@ export default function WpPlanEditor() {
     }
   };
 
+  const renderDeptPicker = (groupId: string, personType: PersonType) => {
+    const pickerKey = `${personType}-${groupId}`;
+    if (!deptPickerOpen[pickerKey]) return null;
+    const departments = personType === 'engineer' ? engineerDepartments : employeeDepartments;
+    const selected = personType === 'engineer' ? engineerDeptFilters : employeeDeptFilters;
+    return (
+      <div className="mt-2 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-semibold text-gray-500">Departments</div>
+          <button type="button" className="text-xs font-semibold text-blue-700" onClick={() => clearDeptFilters(personType)}>Clear</button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {departments.map((department) => {
+            const active = selected.includes(department);
+            return (
+              <button
+                key={department}
+                type="button"
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${active ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}
+                onClick={() => toggleDeptFilter(personType, department)}
+              >
+                {department}
+              </button>
+            );
+          })}
+          {!departments.length && <div className="text-sm text-gray-500">No departments.</div>}
+        </div>
+      </div>
+    );
+  };
+
+  const renderPicker = (group: WpAssignmentGroup, personType: PersonType, groupIndex: number) => {
+    const isEngineer = personType === 'engineer';
+    const pickerKey = `${personType}-${group.id}`;
+    const value = isEngineer ? engineerSearch[group.id] || '' : employeeSearch[group.id] || '';
+    const setValue = isEngineer ? setEngineerSearch : setEmployeeSearch;
+    const filters = isEngineer ? engineerDeptFilters : employeeDeptFilters;
+    const people = getPeopleResults(group, personType);
+    const grouped = groupPeopleByDepartment(people);
+    return (
+      <div className="space-y-2">
+        {!readOnly && (
+          <>
+            <div className="relative">
+              <input
+                className="input w-full pr-20"
+                value={value}
+                placeholder={isEngineer ? 'Search or type engineer' : 'Search or type employee'}
+                onFocus={() => setActiveDropdown(pickerKey)}
+                onChange={(event) => {
+                  setActiveDropdown(pickerKey);
+                  setValue((prev) => ({ ...prev, [group.id]: event.target.value }));
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (isEngineer) addTypedEngineer(group.id);
+                    else addTypedEmployee(group.id);
+                  }
+                }}
+              />
+              {value && (
+                <button
+                  type="button"
+                  className="absolute right-11 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-gray-100"
+                  onClick={() => setValue((prev) => ({ ...prev, [group.id]: '' }))}
+                  aria-label="Clear"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                type="button"
+                className={`absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 inline-flex items-center justify-center rounded-full ${filters.length ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-500'}`}
+                onClick={() => setDeptPickerOpen((prev) => ({ ...prev, [pickerKey]: !prev[pickerKey] }))}
+                aria-label="Filter departments"
+              >
+                <Filter className="h-4 w-4" />
+              </button>
+            </div>
+            {renderDeptPicker(group.id, personType)}
+            {activeDropdown === pickerKey && (
+              <div className="max-h-72 overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+                {grouped.map(([department, entries]) => (
+                  <div key={department}>
+                    <div className="sticky top-0 bg-slate-50 px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">
+                      {department}
+                    </div>
+                    {entries.map((person) => {
+                      const usage = personType === 'employee' ? employeeUseMap.get(person.id) : null;
+                      const usedElsewhere = !!usage && usage.groups.some((label) => label !== `Group ${groupIndex + 1}`);
+                      return (
+                        <button
+                          key={person.id}
+                          type="button"
+                          className={`w-full text-left px-3 py-2 border-b border-gray-50 last:border-b-0 ${usedElsewhere ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-blue-50'}`}
+                          onClick={() => {
+                            if (isEngineer) addEngineerToGroup(group.id, person);
+                            else addEmployeeToGroup(group.id, person);
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-gray-900 break-words">{displayPersonName(person.fullName)}</div>
+                              <div className="text-xs text-gray-500 break-words">
+                                {person.position || '-'}{person.department ? ` - ${person.department}` : ''}
+                              </div>
+                            </div>
+                            {usedElsewhere && <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700">Used</span>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+                {people.length === 0 && (
+                  <div className="px-3 py-3 text-sm text-gray-500">
+                    Press Enter to add typed {isEngineer ? 'engineer' : 'employee'}.
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderSelectedPerson = (groupId: string, personType: PersonType, person: WpEmployee) => {
+    const duplicate = personType === 'employee' && (employeeUseMap.get(person.id)?.count || 0) > 1;
+    const position = person.assignmentPosition || person.position || 'Position';
+    const dragTarget = { groupId, personType, personId: person.id };
+    return (
+      <div
+        key={person.id}
+        draggable={!readOnly}
+        onDragStart={(event) => onDragStart(event, dragTarget)}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => onDropPerson(event, dragTarget)}
+        onTouchStart={(event) => onTouchStartPerson(event, dragTarget)}
+        onTouchEnd={(event) => onTouchEndPerson(event, person)}
+        className={`rounded-2xl border px-3 py-2 ${duplicate ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}
+      >
+        <div className="flex items-center gap-2">
+          {!readOnly && <GripVertical className="h-5 w-5 shrink-0 text-gray-400 cursor-grab" />}
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-gray-900 break-words">{displayPersonName(person.fullName)}</div>
+          </div>
+          <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold ${positionClass(position)}`}>
+            {position || '-'}
+          </span>
+          {!readOnly && (
+            <div className="hidden sm:flex items-center gap-1">
+              <button
+                type="button"
+                className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-gray-200 hover:bg-gray-50"
+                onClick={() => openPositionEditor(groupId, personType, person)}
+                aria-label="Edit position"
+              >
+                <Pencil className="h-4 w-4 text-blue-600" />
+              </button>
+              <button
+                type="button"
+                className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
+                onClick={() => removePerson(groupId, personType, person.id)}
+                aria-label="Delete"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const filteredPositionSuggestions = positionSuggestions
+    .filter((position) => {
+      const query = positionQuery.toLowerCase().trim();
+      return !query || position.toLowerCase().includes(query);
+    })
+    .slice(0, 20);
+
   if (loading) return <div className="card p-6">Loading...</div>;
 
   return (
@@ -622,7 +922,6 @@ export default function WpPlanEditor() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="text-xl font-semibold">{title}</div>
-          <div className="text-sm text-gray-500">RAK WP</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-ghost" onClick={() => nav('/wp')}>Back</button>
@@ -641,69 +940,49 @@ export default function WpPlanEditor() {
         </div>
       )}
 
-      {isEdit && planCode && (
-        <div className="card p-4">
-          <div className="text-xs text-gray-500">Plan ID</div>
-          <div className="text-xl font-semibold text-gray-900 break-words">{planCode}</div>
-        </div>
-      )}
-
       <div className="card p-4 space-y-4">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Work date</label>
-            <input
-              type="date"
-              className="input w-full"
-              value={workDate}
-              disabled={readOnly}
-              onChange={(e) => setWorkDate(e.target.value)}
-            />
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-gray-500">Plan ID</div>
+            <div className="text-xl font-semibold text-gray-900 break-words">{planCode || 'New plan'}</div>
           </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Status</label>
-            <div className={`h-10 px-3 rounded-xl border flex items-center text-sm font-semibold ${status === 'SUBMITTED' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
-              {status}
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <span className={`badge ${status === 'SUBMITTED' ? 'status-ready' : 'status-partially_approved'}`}>{status}</span>
+            <span className="badge border-gray-200 bg-gray-50 text-gray-700">{displayCoordinatorName}</span>
           </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Coordinator</label>
-            <div className="h-10 px-3 rounded-xl border border-gray-200 flex items-center text-sm text-gray-700 truncate">
-              {displayCoordinatorName}
-            </div>
-          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Work date</label>
+          <input
+            type="date"
+            className="input w-full sm:max-w-xs"
+            value={workDate}
+            disabled={readOnly}
+            onChange={(e) => setWorkDate(e.target.value)}
+          />
         </div>
       </div>
 
       <datalist id="wp-project-options">
         {projects.map((project) => (
-          <option key={project.id} value={project.id}>
-            {project.nameEn || project.nameAr || project.name || project.id}
-          </option>
-        ))}
-      </datalist>
-      <datalist id="wp-engineer-options">
-        {engineers.map((engineer) => (
-          <option key={engineer.id} value={engineer.nameEn || engineer.nameAr || engineer.id} />
+          <option key={project.id} value={projectDisplayName(project)} />
         ))}
       </datalist>
 
       <div className="space-y-3">
         {groups.map((group, index) => {
+          const selectedEngineers = getSelectedEngineers(group);
           const selectedEmployees = getSelectedEmployees(group);
-          const employeeResults = getEmployeeResults(group);
+          const groupTitle = cleanText(group.projectCode) || `Group ${index + 1}`;
           return (
             <div key={group.id} className="card p-0 overflow-hidden">
               <div className="px-4 py-3 flex items-center justify-between gap-3">
-                <button type="button" className="flex-1 text-left" onClick={() => toggleGroup(group.id)}>
-                  <div className="text-base font-semibold">Group {index + 1}</div>
-                  <div className="text-xs text-gray-500">
-                    {group.projectCode || 'No project'} - {group.engineerNames.length} engineer{group.engineerNames.length === 1 ? '' : 's'} - {selectedEmployees.length} employee{selectedEmployees.length === 1 ? '' : 's'}
-                  </div>
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleGroup(group.id)}>
+                  <div className="text-base font-semibold text-gray-900 truncate">{groupTitle}</div>
                 </button>
                 <div className="flex items-center gap-2">
                   {!readOnly && groups.length > 1 && (
-                    <button type="button" className="btn-ghost text-red-600" onClick={() => removeGroup(group.id)}>
+                    <button type="button" className="btn-ghost text-red-600" onClick={() => removeGroup(group.id)} aria-label="Delete group">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
@@ -715,215 +994,33 @@ export default function WpPlanEditor() {
               </div>
 
               {!group.collapsed && (
-                <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Project</label>
-                      <input
-                        className="input w-full"
-                        list="wp-project-options"
-                        value={group.projectCode}
-                        disabled={readOnly}
-                        placeholder="Example: DS01"
-                        onChange={(e) => updateGroup(group.id, { projectCode: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Project description</label>
-                      <input
-                        className="input w-full"
-                        value={group.projectName || ''}
-                        disabled={readOnly}
-                        placeholder="English only"
-                        onChange={(e) => updateGroup(group.id, { projectName: e.target.value })}
-                      />
+                <div className="px-4 pb-4 space-y-5 border-t border-gray-100">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Project</label>
+                    <input
+                      className="input w-full"
+                      list="wp-project-options"
+                      value={group.projectCode}
+                      disabled={readOnly}
+                      placeholder="Project name"
+                      onChange={(e) => updateGroup(group.id, { projectCode: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-xs text-gray-500">Engineers</label>
+                    {renderPicker(group, 'engineer', index)}
+                    <div className="space-y-2">
+                      {selectedEngineers.map((engineer) => renderSelectedPerson(group.id, 'engineer', engineer))}
+                      {selectedEngineers.length === 0 && <div className="text-sm text-gray-500">No engineers selected.</div>}
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Engineer(s)</label>
-                    {!readOnly && (
-                      <div className="space-y-2">
-                        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                          <input
-                            className="input w-full"
-                            value={engineerDraft[group.id] || ''}
-                            placeholder="Search or type engineer name"
-                            onChange={(e) => setEngineerDraft((prev) => ({ ...prev, [group.id]: e.target.value }))}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                addEngineer(group.id);
-                              }
-                            }}
-                          />
-                          <button type="button" className="btn-primary" onClick={() => addEngineer(group.id)}>Add Typed</button>
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-3">
-                          <select className="input" value={engineerDeptFilter} onChange={(e) => setEngineerDeptFilter(e.target.value)}>
-                            <option value="">All departments</option>
-                            {engineerDepartments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
-                          </select>
-                          <select className="input" value={engineerPositionFilter} onChange={(e) => setEngineerPositionFilter(e.target.value)}>
-                            <option value="">All positions</option>
-                            {engineerPositions.map((position) => <option key={position} value={position}>{position}</option>)}
-                          </select>
-                          <select className="input" value={engineerSortKey} onChange={(e) => setEngineerSortKey(e.target.value as any)}>
-                            <option value="name">Sort by name</option>
-                            <option value="position">Sort by position</option>
-                            <option value="department">Sort by department</option>
-                          </select>
-                        </div>
-                        <div className="max-h-48 overflow-y-auto border border-gray-100 rounded-xl">
-                          {getEngineerResults(group).map((engineer) => (
-                            <button
-                              key={engineer.id}
-                              type="button"
-                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-b-0"
-                              onClick={() => addEngineerName(group.id, engineer.name)}
-                            >
-                              <div className="text-sm font-semibold text-gray-900">{engineer.name}</div>
-                              <div className="text-xs text-gray-500">{engineer.position || '-'} - {engineer.department || '-'}</div>
-                            </button>
-                          ))}
-                          {getEngineerResults(group).length === 0 && <div className="px-3 py-3 text-sm text-gray-500">No engineers found.</div>}
-                        </div>
-                      </div>
-                    )}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {group.engineerNames.map((name) => (
-                        <span key={name} className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                          <span>{name}</span>
-                          {!readOnly && (
-                            <button type="button" className="text-blue-500 hover:text-red-600" onClick={() => removeEngineer(group.id, name)}>
-                              <X className="h-4 w-4" />
-                            </button>
-                          )}
-                        </span>
-                      ))}
-                      {group.engineerNames.length === 0 && <div className="text-sm text-gray-500">No engineers selected.</div>}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Employees</label>
-                    {!readOnly && (
-                      <input
-                        className="input w-full"
-                        value={employeeSearch[group.id] || ''}
-                        placeholder="Search by name, code, department, or position"
-                        onChange={(e) => setEmployeeSearch((prev) => ({ ...prev, [group.id]: e.target.value }))}
-                      />
-                    )}
-
-                    {!readOnly && (
-                      <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                        <select className="input" value={employeeDeptFilter} onChange={(e) => setEmployeeDeptFilter(e.target.value)}>
-                          <option value="">All departments</option>
-                          {employeeDepartments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
-                        </select>
-                        <select className="input" value={employeePositionFilter} onChange={(e) => setEmployeePositionFilter(e.target.value)}>
-                          <option value="">All positions</option>
-                          {employeePositions.map((position) => <option key={position} value={position}>{position}</option>)}
-                        </select>
-                        <select className="input" value={employeeSortKey} onChange={(e) => setEmployeeSortKey(e.target.value as any)}>
-                          <option value="name">Sort by name</option>
-                          <option value="position">Sort by position</option>
-                          <option value="department">Sort by department</option>
-                        </select>
-                      </div>
-                    )}
-
-                    {!readOnly && (
-                      <div className="mt-2 max-h-56 overflow-y-auto border border-gray-100 rounded-xl">
-                        {employeeResults.map((employee) => {
-                          const usage = employeeUseMap.get(employee.id);
-                          const usedElsewhere = !!usage && usage.groups.some((label) => label !== `Group ${index + 1}`);
-                          const rowClass = usedElsewhere
-                            ? 'bg-amber-50 hover:bg-amber-100'
-                            : 'hover:bg-blue-50';
-                          return (
-                            <button
-                              key={employee.id}
-                              type="button"
-                              className={`w-full text-left px-3 py-2 border-b border-gray-50 last:border-b-0 ${rowClass}`}
-                              onClick={() => addEmployeeToGroup(group.id, employee)}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <div className="text-sm font-semibold text-gray-900">{employee.fullName}</div>
-                                  <div className="text-xs text-gray-500">{employee.memberCode} - {employee.position || '-'} - {employee.department || '-'}</div>
-                                </div>
-                                {usedElsewhere && <span className="text-[11px] font-semibold text-amber-700">Already used</span>}
-                              </div>
-                            </button>
-                          );
-                        })}
-                        {employeeResults.length === 0 && <div className="px-3 py-3 text-sm text-gray-500">No employees found.</div>}
-                      </div>
-                    )}
-
-                    {!readOnly && (
-                      <div className="mt-3 grid gap-2 sm:grid-cols-4">
-                        <input
-                          className="input sm:col-span-2"
-                          value={manualName[group.id] || ''}
-                          placeholder="Manual employee name"
-                          onChange={(e) => setManualName((prev) => ({ ...prev, [group.id]: e.target.value }))}
-                        />
-                        <input
-                          className="input"
-                          value={manualPosition[group.id] || ''}
-                          placeholder="Position"
-                          onChange={(e) => setManualPosition((prev) => ({ ...prev, [group.id]: e.target.value }))}
-                        />
-                        <div className="flex gap-2">
-                          <input
-                            className="input"
-                            value={manualDepartment[group.id] || ''}
-                            placeholder="Department"
-                            onChange={(e) => setManualDepartment((prev) => ({ ...prev, [group.id]: e.target.value }))}
-                          />
-                          <button type="button" className="btn-primary" onClick={() => addManualEmployeeToGroup(group.id)}>Add</button>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="mt-3 space-y-2">
-                      {selectedEmployees.map((employee) => {
-                        const usage = employeeUseMap.get(employee.id);
-                        const duplicate = !!usage && usage.count > 1;
-                        return (
-                          <div
-                            key={employee.id}
-                            className={`rounded-xl border px-3 py-3 ${duplicate ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'}`}
-                          >
-                            <div className="grid gap-3 sm:grid-cols-[1fr_180px_44px] sm:items-center">
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold text-gray-900 break-words">{employee.fullName}</div>
-                                <div className="text-xs text-gray-500 break-words">
-                                  {employee.memberCode || '-'} - {employee.department || '-'}
-                                  {duplicate ? ` - ${usage?.groups.join(', ')}` : ''}
-                                </div>
-                              </div>
-                              <div>
-                                <label className="block text-[11px] text-gray-500 mb-1">Position</label>
-                                <input
-                                  className="input w-full"
-                                  value={employee.assignmentPosition || employee.position || ''}
-                                  disabled={readOnly}
-                                  onChange={(e) => updateEmployeePosition(group.id, employee.id, e.target.value)}
-                                />
-                              </div>
-                              {!readOnly && (
-                                <button type="button" className="btn-ghost text-red-600" onClick={() => removeEmployeeFromGroup(group.id, employee.id)}>
-                                  <X className="h-4 w-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                  <div className="space-y-2">
+                    <label className="block text-xs text-gray-500">Employees</label>
+                    {renderPicker(group, 'employee', index)}
+                    <div className="space-y-2">
+                      {selectedEmployees.map((employee) => renderSelectedPerson(group.id, 'employee', employee))}
                       {selectedEmployees.length === 0 && <div className="text-sm text-gray-500">No employees selected.</div>}
                     </div>
                   </div>
@@ -950,12 +1047,67 @@ export default function WpPlanEditor() {
             <button type="button" className="btn-ghost disabled:opacity-50" disabled={busy} onClick={() => savePlan('DRAFT')}>
               {busy ? 'Saving...' : 'Save Draft'}
             </button>
-            <button type="button" className="btn-primary disabled:opacity-50" disabled={busy} onClick={() => savePlan('SUBMITTED')}>
-              {busy ? 'Submitting...' : 'Submit'}
+            <button type="button" className="btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={() => savePlan('SUBMITTED')}>
+              <Send className="h-4 w-4" />
+              <span>{busy ? 'Submitting...' : 'Submit'}</span>
             </button>
           </>
         )}
       </div>
+
+      {editingPerson && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-4 shadow-xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-gray-900 break-words">{editingPerson.name}</div>
+                {editingPerson.department && <div className="text-xs text-gray-500">{editingPerson.department}</div>}
+              </div>
+              <button type="button" className="btn-ghost" onClick={() => setEditingPerson(null)} aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Position</label>
+              <input
+                className="input w-full"
+                value={positionDraft}
+                onChange={(event) => {
+                  setPositionDraft(event.target.value);
+                  setPositionQuery(event.target.value);
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+              {filteredPositionSuggestions.map((position) => {
+                const selected = positionDraft.split('/').map((part) => cleanText(part)).includes(position);
+                return (
+                  <button
+                    key={position}
+                    type="button"
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${selected ? positionClass(position) : 'border-gray-200 bg-white text-gray-600'}`}
+                    onClick={() => {
+                      setPositionDraft((prev) => {
+                        const parts = prev.split('/').map((part) => cleanText(part)).filter(Boolean);
+                        if (parts.includes(position)) return parts.filter((part) => part !== position).join(' / ');
+                        return [...parts, position].join(' / ');
+                      });
+                    }}
+                  >
+                    {position}
+                  </button>
+                );
+              })}
+              {!filteredPositionSuggestions.length && <div className="text-sm text-gray-500">No saved positions.</div>}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-ghost" onClick={() => setEditingPerson(null)}>Cancel</button>
+              <button type="button" className="btn-primary" onClick={savePositionEdit}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
