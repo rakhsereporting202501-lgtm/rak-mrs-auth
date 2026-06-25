@@ -60,6 +60,9 @@ textarea.input { @apply h-auto min-h-[6rem]; }
 .badge { @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-lg border; }
 .icon-blue { @apply text-blue-600; }
 .link { @apply underline text-blue-700 hover:text-blue-800; }
+.wp-sortable-row { position: relative; transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease; }
+.wp-sortable-row.is-dragging { transform: scale(1.025); z-index: 20; }
+.wp-drag-handle { touch-action: none; user-select: none; }
 
 /* Hero greeting card */
 .hero-card { @apply rounded-2xl p-6 sm:p-8 bg-gradient-to-br from-blue-700 to-blue-600 text-white shadow-lg ring-1 ring-blue-600/50; }

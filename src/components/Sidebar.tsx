@@ -4,6 +4,7 @@ import { Inbox, Boxes, BarChart3, User, LogOut, Plus, Users, UserPlus, LayoutGri
 import { getAuth, signOut } from 'firebase/auth';
 import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { confirmWpUnsavedChanges, setWpUnsavedChangesFlag } from '../lib/wpUnsaved';
 // Language switcher removed: English-only build
 
 export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boolean; onClose: () => void; collapsedDesktop?: boolean; }) {
@@ -22,6 +23,12 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
   const showNew = !!canRequest;
   const homeHref = isWpApp ? '/wp' : '/requests';
   const appTitle = isWpApp ? 'خطط العمل' : 'RAK IMS';
+
+  const handleSignOut = () => {
+    if (!confirmWpUnsavedChanges()) return;
+    setWpUnsavedChangesFlag(false);
+    signOut(getAuth());
+  };
 
   const Item = ({ to, icon:Icon, label }:{to:string, icon:any, label:string}) => (
     <NavLink to={to} className={({isActive})=>`flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-blue-50 ${isActive?'bg-blue-50':''}`} onClick={onClose}>
@@ -72,7 +79,7 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
             </>
           )}
           <Item to="/profile" icon={User} label={isWpApp ? 'الملف الشخصي' : 'Profile'} />
-          <button onClick={()=>signOut(getAuth())} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-blue-50">
+          <button onClick={handleSignOut} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-blue-50">
             <LogOut className="h-4 w-4 icon-blue"/><span>{isWpApp ? 'تسجيل الخروج' : 'Sign out'}</span>
           </button>
         </div>

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type DragEvent } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useBeforeUnload, useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   collection,
   doc,
@@ -13,6 +13,7 @@ import {
 import { ChevronDown, Copy, EyeOff, Filter, GripVertical, Keyboard, List, Pencil, Plus, Send, Trash2, X } from 'lucide-react';
 import { initFirebase } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
+import { setWpUnsavedChangesFlag, WP_UNSAVED_CHANGES_MESSAGE } from '../lib/wpUnsaved';
 import {
   makeWpGroup,
   tomorrowYmd,
@@ -31,11 +32,12 @@ type PersonType = 'engineer' | 'employee';
 type PickerMode = 'project' | 'engineer' | 'employee';
 type EditingPerson = { groupId: string; personType: PersonType; personId: string; name: string; position: string; department?: string };
 type DragInfo = { groupId: string; personType: PersonType; personId: string };
+type PointerDragInfo = DragInfo & { pointerId: number; startX: number; startY: number; currentY: number; active: boolean };
 
 const pickerModes: { mode: PickerMode; label: string }[] = [
   { mode: 'project', label: 'المشروع' },
   { mode: 'engineer', label: 'المهندس' },
-  { mode: 'employee', label: 'الموظفين' },
+  { mode: 'employee', label: 'فريق العمل' },
 ];
 
 const positionPalette = [
@@ -177,9 +179,34 @@ function pickerKey(groupId: string, mode: PickerMode) {
   return `${groupId}:${mode}`;
 }
 
+function personSignature(person: WpEmployee) {
+  const snapshot = snapshotPerson(person);
+  return {
+    id: snapshot.id,
+    fullName: snapshot.fullName,
+    position: snapshot.assignmentPosition || snapshot.position || '',
+    department: snapshot.department || '',
+    manual: !!snapshot.manual,
+  };
+}
+
+function planSignature(status: WpPlanStatus, workDate: string, groups: WpAssignmentGroup[]) {
+  return JSON.stringify({
+    status,
+    workDate,
+    groups: groups.map((group) => ({
+      projectCode: cleanText(group.projectCode || ''),
+      engineerSnapshots: (group.engineerSnapshots || []).map(personSignature),
+      employeeIds: Array.isArray(group.employeeIds) ? group.employeeIds : [],
+      employeeSnapshots: (group.employeeSnapshots || []).map(personSignature),
+    })),
+  });
+}
+
 export default function WpPlanEditor() {
   const { user, role } = useAuth();
   const nav = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const [params] = useSearchParams();
   const copyId = params.get('copy');
@@ -216,7 +243,13 @@ export default function WpPlanEditor() {
   const [editingPerson, setEditingPerson] = useState<EditingPerson | null>(null);
   const [positionDraft, setPositionDraft] = useState('');
   const [positionQuery, setPositionQuery] = useState('');
-  const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
+  const [pointerDrag, setPointerDrag] = useState<PointerDragInfo | null>(null);
+  const pointerDragRef = useRef<PointerDragInfo | null>(null);
+  const pendingDragRef = useRef<PointerDragInfo | null>(null);
+  const dragHoldTimerRef = useRef<number | null>(null);
+  const lastDragTargetRef = useRef('');
+  const skipNavigationPromptRef = useRef(false);
+  const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [sourcePlanId, setSourcePlanId] = useState<string | null>(copyId || null);
   const [loading, setLoading] = useState(!!id || !!copyId);
   const [busy, setBusy] = useState(false);
@@ -275,10 +308,12 @@ export default function WpPlanEditor() {
           return;
         }
         const data = { id: snap.id, ...(snap.data() as any) } as WpPlanDoc;
+        const nextWorkDate = copyId ? tomorrowYmd() : (data.workDate || tomorrowYmd());
+        const nextStatus = (copyId ? 'DRAFT' : (data.status || 'DRAFT')) as WpPlanStatus;
         setPlanCode(copyId ? '' : (data.planCode || data.id || ''));
         setCoordinatorNameEn(copyId ? '' : (data.coordinatorNameEn || ''));
-        setWorkDate(copyId ? tomorrowYmd() : (data.workDate || tomorrowYmd()));
-        setStatus(copyId ? 'DRAFT' : (data.status || 'DRAFT'));
+        setWorkDate(nextWorkDate);
+        setStatus(nextStatus);
         setSourcePlanId(copyId ? data.id : (data.sourcePlanId || null));
         setPlanOwner(copyId ? null : { createdByUid: data.createdByUid, createdBy: data.createdBy });
         const loadedGroups = Array.isArray(data.groups) && data.groups.length
@@ -309,6 +344,7 @@ export default function WpPlanEditor() {
             })
           : [makeWpGroup()];
         setGroups(loadedGroups);
+        setSavedSignature(planSignature(nextStatus, nextWorkDate, loadedGroups));
       } catch (err: any) {
         setError(err?.code === 'permission-denied'
           ? 'لا توجد صلاحية لقراءة خطة العمل. تأكد من نشر قواعد Firestore الخاصة بخطط العمل.'
@@ -384,7 +420,7 @@ export default function WpPlanEditor() {
       group.employeeIds.forEach((employeeId) => {
         const current = map.get(employeeId) || { count: 0, groups: [] };
         current.count += 1;
-        current.groups.push(`مجموعة ${idx + 1}`);
+        current.groups.push(`مشروع ${idx + 1}`);
         map.set(employeeId, current);
       });
     });
@@ -662,18 +698,86 @@ export default function WpPlanEditor() {
     }));
   };
 
-  const onDragStart = (event: DragEvent, info: DragInfo) => {
+  useEffect(() => {
+    pointerDragRef.current = pointerDrag;
+  }, [pointerDrag]);
+
+  const clearPendingDrag = useCallback(() => {
+    if (dragHoldTimerRef.current) {
+      window.clearTimeout(dragHoldTimerRef.current);
+      dragHoldTimerRef.current = null;
+    }
+    pendingDragRef.current = null;
+    lastDragTargetRef.current = '';
+  }, []);
+
+  const startPointerDrag = (event: ReactPointerEvent, info: DragInfo) => {
     if (readOnly) return;
-    event.dataTransfer.effectAllowed = 'move';
-    setDragInfo(info);
+    event.preventDefault();
+    event.stopPropagation();
+    const pending: PointerDragInfo = {
+      ...info,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      currentY: event.clientY,
+      active: false,
+    };
+    clearPendingDrag();
+    pendingDragRef.current = pending;
+    dragHoldTimerRef.current = window.setTimeout(() => {
+      pendingDragRef.current = null;
+      lastDragTargetRef.current = '';
+      setPointerDrag({ ...pending, active: true });
+    }, 180);
   };
 
-  const onDropPerson = (event: DragEvent, target: DragInfo) => {
-    event.preventDefault();
-    if (!dragInfo || dragInfo.groupId !== target.groupId || dragInfo.personType !== target.personType) return;
-    reorderPerson(target.groupId, target.personType, dragInfo.personId, target.personId);
-    setDragInfo(null);
-  };
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const pending = pendingDragRef.current;
+      if (pending && pending.pointerId === event.pointerId) {
+        const moved = Math.hypot(event.clientX - pending.startX, event.clientY - pending.startY);
+        if (moved > 12) clearPendingDrag();
+      }
+
+      const active = pointerDragRef.current;
+      if (!active || !active.active || active.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      setPointerDrag((prev) => prev ? { ...prev, currentY: event.clientY } : prev);
+      const row = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest<HTMLElement>('[data-wp-person-row="true"]');
+      if (!row) return;
+      const targetGroupId = row.dataset.wpGroupId || '';
+      const targetPersonType = row.dataset.wpPersonType as PersonType | undefined;
+      const targetPersonId = row.dataset.wpPersonId || '';
+      if (!targetPersonId || targetPersonId === active.personId) return;
+      if (targetGroupId !== active.groupId || targetPersonType !== active.personType) return;
+      const targetKey = `${targetGroupId}:${targetPersonType}:${targetPersonId}`;
+      if (lastDragTargetRef.current === targetKey) return;
+      lastDragTargetRef.current = targetKey;
+      reorderPerson(active.groupId, active.personType, active.personId, targetPersonId);
+    };
+
+    const onPointerEnd = (event: PointerEvent) => {
+      const pending = pendingDragRef.current;
+      const active = pointerDragRef.current;
+      if (pending?.pointerId === event.pointerId) clearPendingDrag();
+      if (active?.pointerId === event.pointerId) {
+        clearPendingDrag();
+        setPointerDrag(null);
+      }
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerEnd);
+    window.addEventListener('pointercancel', onPointerEnd);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerEnd);
+      window.removeEventListener('pointercancel', onPointerEnd);
+    };
+  }, [clearPendingDrag, reorderPerson]);
 
   const toggleDeptFilter = (mode: PickerMode, department: string) => {
     if (mode === 'project') return;
@@ -690,14 +794,14 @@ export default function WpPlanEditor() {
 
   const validate = () => {
     if (!workDate) return 'تاريخ العمل مطلوب.';
-    if (!groups.length) return 'أضف مجموعة واحدة على الأقل.';
+    if (!groups.length) return 'أضف مشروع واحد على الأقل.';
     for (let i = 0; i < groups.length; i += 1) {
       const group = groups[i];
-      const label = group.projectCode ? cleanText(group.projectCode) : `مجموعة ${i + 1}`;
+      const label = group.projectCode ? cleanText(group.projectCode) : `مشروع ${i + 1}`;
       if (!cleanText(group.projectCode)) return `${label}: المشروع مطلوب.`;
       if (!isEnglishProjectText(group.projectCode)) return `${label}: يجب كتابة اسم المشروع باللغة الإنجليزية.`;
       if (!getSelectedEngineers(group).length) return `${label}: اختر أو اكتب مهندس واحد على الأقل.`;
-      if (!group.employeeIds.length) return `${label}: اختر أو اكتب موظف واحد على الأقل.`;
+      if (!group.employeeIds.length) return `${label}: اختر أو اكتب فرد واحد من فريق العمل على الأقل.`;
     }
     return null;
   };
@@ -718,6 +822,47 @@ export default function WpPlanEditor() {
     });
   };
 
+  const currentSignature = useMemo(
+    () => planSignature(status, workDate, buildGroupsPayload()),
+    [status, workDate, groups, employees]
+  );
+  const hasUnsavedChanges = !!savedSignature && !readOnly && currentSignature !== savedSignature;
+
+  useEffect(() => {
+    if (!id && !copyId && savedSignature === null) setSavedSignature(currentSignature);
+  }, [id, copyId, savedSignature, currentSignature]);
+
+  useEffect(() => {
+    setWpUnsavedChangesFlag(hasUnsavedChanges);
+    return () => setWpUnsavedChangesFlag(false);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    skipNavigationPromptRef.current = false;
+  }, [location.pathname, location.search]);
+
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => (
+    hasUnsavedChanges
+    && !skipNavigationPromptRef.current
+    && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search)
+  ));
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return;
+    if (window.confirm(WP_UNSAVED_CHANGES_MESSAGE)) {
+      skipNavigationPromptRef.current = true;
+      blocker.proceed();
+    } else {
+      blocker.reset();
+    }
+  }, [blocker]);
+
+  useBeforeUnload(useCallback((event) => {
+    if (!hasUnsavedChanges || skipNavigationPromptRef.current) return;
+    event.preventDefault();
+    event.returnValue = WP_UNSAVED_CHANGES_MESSAGE;
+  }, [hasUnsavedChanges]), { capture: true });
+
   const savePlan = async (nextStatus: WpPlanStatus) => {
     if (!user?.uid || readOnly) return;
     setError(null);
@@ -730,6 +875,7 @@ export default function WpPlanEditor() {
     setBusy(true);
     try {
       const groupsPayload = buildGroupsPayload();
+      const savedNextSignature = planSignature(nextStatus, workDate, groupsPayload);
       const ownerUid = isEdit && planOwner?.createdByUid ? planOwner.createdByUid : user.uid;
       const ownerInfo = isEdit && planOwner?.createdBy
         ? planOwner.createdBy
@@ -756,8 +902,12 @@ export default function WpPlanEditor() {
         await updateDoc(doc(db, WP_WORK_PLANS_COLLECTION, id), basePayload);
         setStatus(nextStatus);
         setGroups(groupsPayload.map((group, index) => ({ ...group, collapsed: index > 0 })));
+        setSavedSignature(savedNextSignature);
         setSuccess(nextStatus === 'SUBMITTED' ? 'تم إرسال خطة العمل.' : 'تم حفظ المسودة.');
-        if (nextStatus === 'SUBMITTED') nav('/wp');
+        if (nextStatus === 'SUBMITTED') {
+          skipNavigationPromptRef.current = true;
+          nav('/wp');
+        }
       } else {
         const monthKey = monthKeyFromDate(workDate);
         const planId = await runTransaction(db, async (tx) => {
@@ -781,6 +931,8 @@ export default function WpPlanEditor() {
           });
           return newPlanId;
         });
+        setSavedSignature(savedNextSignature);
+        skipNavigationPromptRef.current = true;
         if (nextStatus === 'SUBMITTED') {
           nav('/wp');
         } else {
@@ -869,7 +1021,7 @@ export default function WpPlanEditor() {
             </div>
             {entries.map((person) => {
               const usage = mode === 'employee' ? employeeUseMap.get(person.id) : null;
-              const usedElsewhere = !!usage && usage.groups.some((label) => label !== `مجموعة ${groupIndex + 1}`);
+              const usedElsewhere = !!usage && usage.groups.some((label) => label !== `مشروع ${groupIndex + 1}`);
               return (
                 <button
                   key={person.id}
@@ -896,7 +1048,7 @@ export default function WpPlanEditor() {
         ))}
         {!people.length && (
           <div className="px-3 py-3 text-sm text-gray-500">
-            اضغط Enter لإضافة {mode === 'engineer' ? 'المهندس' : 'الموظف'} المكتوب.
+            اضغط Enter لإضافة {mode === 'engineer' ? 'المهندس' : 'فرد فريق العمل'} المكتوب.
           </div>
         )}
       </div>
@@ -909,6 +1061,15 @@ export default function WpPlanEditor() {
     const value = mode === 'project' ? group.projectCode : (pickerSearch[key] || '');
     const listOpen = openPickerKey === key;
     const hasDepartmentFilter = mode !== 'project' && (mode === 'engineer' ? engineerDeptFilters.length : employeeDeptFilters.length) > 0;
+    const hasValue = !!value;
+    const clearPickerValue = () => {
+      if (mode === 'project') {
+        updateGroup(group.id, { projectCode: '' });
+      } else {
+        setPickerSearch((prev) => ({ ...prev, [key]: '' }));
+      }
+      setOpenPickerKey(key);
+    };
     return (
       <div className="space-y-3">
         <div className="grid grid-cols-3 gap-2">
@@ -931,9 +1092,9 @@ export default function WpPlanEditor() {
         {!readOnly && (
           <div className="flex items-center gap-2">
             <input
-              className="input flex-1 text-right"
+              className="input min-w-0 flex-1 text-right"
               value={value}
-              placeholder={mode === 'project' ? 'اكتب أو اختر المشروع' : mode === 'engineer' ? 'ابحث أو اكتب اسم مهندس' : 'ابحث أو اكتب اسم موظف'}
+              placeholder={mode === 'project' ? 'اكتب أو اختر المشروع' : mode === 'engineer' ? 'ابحث أو اكتب اسم مهندس' : 'ابحث أو اكتب اسم من فريق العمل'}
               disabled={readOnly}
               readOnly={isMobile && !keyboardEnabled[group.id]}
               inputMode={isMobile && !keyboardEnabled[group.id] ? 'none' : undefined}
@@ -955,6 +1116,15 @@ export default function WpPlanEditor() {
                 if (mode === 'employee') addTypedEmployee(group.id);
               }}
             />
+            <button
+              type="button"
+              className={`h-10 w-10 inline-flex items-center justify-center rounded-xl border ${hasValue ? 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50' : 'border-gray-100 bg-gray-50 text-gray-300'}`}
+              onClick={clearPickerValue}
+              disabled={!hasValue}
+              aria-label="مسح الحقل"
+            >
+              <X className="h-4 w-4" />
+            </button>
             {mode !== 'project' && (
               <button
                 type="button"
@@ -1001,18 +1171,32 @@ export default function WpPlanEditor() {
     const duplicate = personType === 'employee' && (employeeUseMap.get(person.id)?.count || 0) > 1;
     const position = person.assignmentPosition || person.position || '';
     const dragTarget = { groupId, personType, personId: person.id };
+    const isDragging = pointerDrag?.active
+      && pointerDrag.groupId === groupId
+      && pointerDrag.personType === personType
+      && pointerDrag.personId === person.id;
     return (
       <div
         key={person.id}
-        draggable={!readOnly}
-        onDragStart={(event) => onDragStart(event, dragTarget)}
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => onDropPerson(event, dragTarget)}
+        data-wp-person-row="true"
+        data-wp-group-id={groupId}
+        data-wp-person-type={personType}
+        data-wp-person-id={person.id}
         onClick={() => openPositionEditor(groupId, personType, person)}
-        className={`rounded-2xl border px-3 py-2 cursor-pointer ${duplicate ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}
+        className={`wp-sortable-row rounded-2xl border px-3 py-2 cursor-pointer ${duplicate ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'} ${isDragging ? 'is-dragging border-blue-300 bg-blue-50 shadow-lg' : ''}`}
       >
         <div className="flex items-center gap-2">
-          {!readOnly && <GripVertical className="h-5 w-5 shrink-0 text-gray-400 cursor-grab" />}
+          {!readOnly && (
+            <button
+              type="button"
+              className="wp-drag-handle h-9 w-8 shrink-0 inline-flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-50 hover:text-blue-600 active:text-blue-700"
+              onPointerDown={(event) => startPointerDrag(event, dragTarget)}
+              onClick={(event) => event.stopPropagation()}
+              aria-label="تحريك"
+            >
+              <GripVertical className="h-5 w-5" />
+            </button>
+          )}
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-gray-900 break-words">{displayPersonName(person.fullName)}</div>
           </div>
@@ -1109,16 +1293,16 @@ export default function WpPlanEditor() {
         {groups.map((group, index) => {
           const selectedEngineers = getSelectedEngineers(group);
           const selectedEmployees = getSelectedEmployees(group);
-          const groupTitle = cleanText(group.projectCode) || `مجموعة ${index + 1}`;
+          const groupTitle = cleanText(group.projectCode) || `مشروع ${index + 1}`;
           return (
-            <div key={group.id} className="card p-0 overflow-hidden">
+            <div key={group.id} className={`card p-0 overflow-hidden ${group.collapsed ? '' : 'bg-gradient-to-b from-white via-slate-50/80 to-white border-slate-300'}`}>
               <div className="px-4 py-3 flex items-center justify-between gap-3">
                 <button type="button" className="min-w-0 flex-1 text-right" onClick={() => toggleGroup(group.id)}>
                   <div className="text-base font-semibold text-gray-900 truncate">{groupTitle}</div>
                 </button>
                 <div className="flex items-center gap-2">
                   {!readOnly && groups.length > 1 && (
-                    <button type="button" className="btn-ghost text-red-600" onClick={() => removeGroup(group.id)} aria-label="حذف المجموعة">
+                    <button type="button" className="btn-ghost text-red-600" onClick={() => removeGroup(group.id)} aria-label="حذف المشروع">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
@@ -1137,7 +1321,7 @@ export default function WpPlanEditor() {
                     {selectedEngineers.map((engineer) => renderSelectedPerson(group.id, 'engineer', engineer))}
                     {selectedEmployees.map((employee) => renderSelectedPerson(group.id, 'employee', employee))}
                     {!selectedEngineers.length && !selectedEmployees.length && (
-                      <div className="text-sm text-gray-500">لم يتم اختيار مهندسين أو موظفين.</div>
+                      <div className="text-sm text-gray-500">لم يتم اختيار مهندسين أو فريق عمل.</div>
                     )}
                   </div>
                 </div>
@@ -1150,7 +1334,7 @@ export default function WpPlanEditor() {
       {!readOnly && (
         <button type="button" className="btn-ghost w-full inline-flex items-center justify-center gap-2" onClick={addGroup}>
           <Plus className="h-4 w-4 icon-blue" />
-          <span>إضافة مجموعة</span>
+          <span>إضافة مشروع جديد</span>
         </button>
       )}
 

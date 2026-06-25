@@ -183,7 +183,7 @@ export default function WpPlans() {
             <input
               className="input w-full pr-9 pl-10 bg-white text-right"
               value={qText}
-              placeholder="ابحث عن خطة، مشروع، مهندس، أو موظف"
+              placeholder="ابحث عن خطة، مشروع، مهندس، أو فريق العمل"
               onChange={(e) => setQText(e.target.value)}
             />
             {qText && (
@@ -208,8 +208,8 @@ export default function WpPlans() {
               <option value="updatedAt">آخر تحديث</option>
               <option value="workDate">تاريخ العمل</option>
               <option value="planCode">رقم الخطة</option>
-              <option value="groups">المجموعات</option>
-              <option value="employees">الموظفين</option>
+              <option value="groups">المشاريع</option>
+              <option value="employees">فريق العمل</option>
             </select>
             <select className="input bg-white" value={sortDir} onChange={(e) => setSortDir(e.target.value as any)}>
               <option value="desc">الأحدث أولاً</option>
@@ -246,7 +246,7 @@ export default function WpPlans() {
                 <div className="min-w-0">
                   <div className="text-lg font-semibold text-gray-900 break-words">{plan.planCode || plan.id}</div>
                   <div className="mt-2 text-sm text-gray-600">
-                    {countLabel(groupCount, 'مجموعة')} - {countLabel(employeeCount, 'موظف')}
+                    {countLabel(groupCount, 'مشروع')} - {countLabel(employeeCount, 'فريق العمل')}
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
