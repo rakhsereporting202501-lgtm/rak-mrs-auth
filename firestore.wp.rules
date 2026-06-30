@@ -1,0 +1,47 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function passwordUser() {
+      return signedIn()
+        && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    match /wpEmployees/{employeeId} {
+      allow read: if true;
+      allow create, update, delete: if passwordUser();
+    }
+
+    match /wpProjects/{projectId} {
+      allow read: if signedIn();
+      allow create, update, delete: if passwordUser();
+    }
+
+    match /wpEngineers/{engineerId} {
+      allow read: if signedIn();
+      allow create, update, delete: if passwordUser();
+    }
+
+    match /wpSessions/{sessionId} {
+      allow read, create, update: if signedIn();
+      allow delete: if passwordUser();
+    }
+
+    match /rakWp_counters/{counterId} {
+      allow read, create, update: if passwordUser();
+    }
+
+    match /rakWp_workPlans/{planId} {
+      allow read: if signedIn();
+      allow create, update, delete: if passwordUser();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,14 +1,16 @@
 // English-only build
 import { NavLink, Link, useLocation } from 'react-router-dom';
-import { Inbox, Boxes, BarChart3, User, LogOut, Plus, Users, UserPlus, LayoutGrid, ClipboardList } from 'lucide-react';
+import { Inbox, Boxes, BarChart3, User, LogOut, Plus, Users, UserPlus, ClipboardList, Shield } from 'lucide-react';
 import { getAuth, signOut } from 'firebase/auth';
 import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useWpAuth } from '../context/WpAuthContext';
 import { confirmWpUnsavedChanges, setWpUnsavedChangesFlag } from '../lib/wpUnsaved';
 // Language switcher removed: English-only build
 
 export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boolean; onClose: () => void; collapsedDesktop?: boolean; }) {
   const { role } = useAuth();
+  const { isAdmin: isWpAdmin, logout: wpLogout } = useWpAuth();
   const loc = useLocation();
   const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
   const isWpApp = loc.pathname.startsWith('/wp');
@@ -27,7 +29,8 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
   const handleSignOut = () => {
     if (!confirmWpUnsavedChanges()) return;
     setWpUnsavedChangesFlag(false);
-    signOut(getAuth());
+    if (isWpApp) wpLogout();
+    else signOut(getAuth());
   };
 
   const Item = ({ to, icon:Icon, label }:{to:string, icon:any, label:string}) => (
@@ -57,11 +60,11 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
           <button className="sm:hidden btn-ghost px-3 py-1 text-sm" onClick={onClose}>{isWpApp ? 'رجوع' : 'Back'}</button>
         </div>
         <div className="p-3 space-y-1">
-          <Item to="/apps" icon={LayoutGrid} label={isWpApp ? 'التطبيقات' : 'Applications'} />
           {isWpApp ? (
             <>
               <Item to="/wp" icon={ClipboardList} label={'خطط العمل'} />
               <Item to="/wp/new" icon={Plus} label={'خطة جديدة'} />
+              {isWpAdmin && <Item to="/wp/admin" icon={Shield} label={'Admin'} />}
             </>
           ) : (
             <>
@@ -78,7 +81,7 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
           {isAdmin && <Item to="/users/new" icon={UserPlus} label={'Create User'} />}
             </>
           )}
-          <Item to="/profile" icon={User} label={isWpApp ? 'الملف الشخصي' : 'Profile'} />
+          <Item to={isWpApp ? '/wp/profile' : '/profile'} icon={User} label={isWpApp ? 'الملف الشخصي' : 'Profile'} />
           <button onClick={handleSignOut} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-blue-50">
             <LogOut className="h-4 w-4 icon-blue"/><span>{isWpApp ? 'تسجيل الخروج' : 'Sign out'}</span>
           </button>

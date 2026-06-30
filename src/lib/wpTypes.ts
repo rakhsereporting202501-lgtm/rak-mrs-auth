@@ -1,16 +1,58 @@
 import employeeSeed from '../data/wpEmployeesSeed.json';
 
 export type WpPlanStatus = 'DRAFT' | 'SUBMITTED';
+export type WpAccountType = 'VIEWER' | 'COORDINATOR' | 'ADMIN';
 
 export type WpEmployee = {
   id: string;
   memberCode: string;
   fullName: string;
+  nameAr?: string;
+  nameEn?: string;
   position?: string;
   department?: string;
+  accountType?: WpAccountType;
+  active?: boolean;
+  authEmail?: string;
+  authUid?: string;
+  departmentIds?: string[];
+  permissions?: Record<string, boolean>;
   assignmentPosition?: string;
   originalPosition?: string;
   manual?: boolean;
+};
+
+export type WpProject = {
+  id: string;
+  code?: string;
+  name?: string;
+  nameAr?: string;
+  nameEn?: string;
+  active?: boolean;
+  description?: string;
+};
+
+export type WpEngineer = {
+  id: string;
+  name?: string;
+  nameAr?: string;
+  nameEn?: string;
+  position?: string;
+  department?: string;
+  active?: boolean;
+};
+
+export type WpSessionDoc = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  accountType: WpAccountType;
+  authUid?: string;
+  active: boolean;
+  userAgent?: string;
+  createdAt?: any;
+  updatedAt?: any;
+  endedAt?: any;
 };
 
 export type WpAssignmentGroup = {
@@ -47,6 +89,11 @@ export type WpPlanDoc = {
 export const WP_EMPLOYEE_SEED = employeeSeed as WpEmployee[];
 export const WP_WORK_PLANS_COLLECTION = 'rakWp_workPlans';
 export const WP_COUNTERS_COLLECTION = 'rakWp_counters';
+export const WP_EMPLOYEES_COLLECTION = 'wpEmployees';
+export const WP_PROJECTS_COLLECTION = 'wpProjects';
+export const WP_ENGINEERS_COLLECTION = 'wpEngineers';
+export const WP_SESSIONS_COLLECTION = 'wpSessions';
+export const WP_SESSION_RTDB_PATH = 'wpSessions';
 
 export function makeWpGroup(): WpAssignmentGroup {
   return {

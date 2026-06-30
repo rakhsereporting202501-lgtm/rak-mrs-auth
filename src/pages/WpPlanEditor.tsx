@@ -5,20 +5,23 @@ import {
   doc,
   getDoc,
   getDocs,
-  getFirestore,
+  onSnapshot,
   runTransaction,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
 import { ChevronDown, Copy, EyeOff, Filter, GripVertical, Keyboard, List, Pencil, Plus, Send, Trash2, X } from 'lucide-react';
-import { initFirebase } from '../lib/firebase';
-import { useAuth } from '../context/AuthContext';
+import { getWpDb } from '../lib/wpFirebase';
+import { useWpAuth } from '../context/WpAuthContext';
 import { setWpUnsavedChangesFlag, WP_UNSAVED_CHANGES_MESSAGE } from '../lib/wpUnsaved';
 import {
   makeWpGroup,
   tomorrowYmd,
   WP_COUNTERS_COLLECTION,
+  WP_EMPLOYEES_COLLECTION,
+  WP_ENGINEERS_COLLECTION,
   WP_EMPLOYEE_SEED,
+  WP_PROJECTS_COLLECTION,
   WP_WORK_PLANS_COLLECTION,
   type WpAssignmentGroup,
   type WpEmployee,
@@ -204,16 +207,15 @@ function planSignature(status: WpPlanStatus, workDate: string, groups: WpAssignm
 }
 
 export default function WpPlanEditor() {
-  const { user, role } = useAuth();
+  const { wpUser, canManagePlans } = useWpAuth();
   const nav = useNavigate();
   const location = useLocation();
   const { id } = useParams();
   const [params] = useSearchParams();
   const copyId = params.get('copy');
   const isEdit = !!id;
-  const { app } = initFirebase();
-  const db = getFirestore(app);
-  const fullName = role?.fullName || user?.displayName || user?.email || '';
+  const db = getWpDb();
+  const fullName = wpUser?.fullName || wpUser?.nameEn || wpUser?.nameAr || '';
   const savedEditorFilters = useMemo(() => {
     try {
       const raw = localStorage.getItem('rakWp.editor.filters');
@@ -228,7 +230,7 @@ export default function WpPlanEditor() {
   const [workDate, setWorkDate] = useState(tomorrowYmd());
   const [status, setStatus] = useState<WpPlanStatus>('DRAFT');
   const [groups, setGroups] = useState<WpAssignmentGroup[]>([makeWpGroup()]);
-  const [employees] = useState<WpEmployee[]>(WP_EMPLOYEE_SEED);
+  const [employees, setEmployees] = useState<WpEmployee[]>(WP_EMPLOYEE_SEED);
   const [projects, setProjects] = useState<Project[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [planOwner, setPlanOwner] = useState<{ createdByUid?: string; createdBy?: WpPlanDoc['createdBy'] } | null>(null);
@@ -256,7 +258,7 @@ export default function WpPlanEditor() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const readOnly = isEdit && status === 'SUBMITTED';
+  const readOnly = !canManagePlans || (isEdit && status === 'SUBMITTED');
   const title = isEdit ? (readOnly ? 'عرض خطة العمل' : 'تعديل خطة العمل') : 'خطة عمل جديدة';
 
   useEffect(() => {
@@ -281,8 +283,8 @@ export default function WpPlanEditor() {
     const loadLookups = async () => {
       try {
         const [projectSnap, engineerSnap] = await Promise.all([
-          getDocs(collection(db, 'projects')),
-          getDocs(collection(db, 'engineers')),
+          getDocs(collection(db, WP_PROJECTS_COLLECTION)),
+          getDocs(collection(db, WP_ENGINEERS_COLLECTION)),
         ]);
         if (!active) return;
         setProjects(projectSnap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) })));
@@ -293,6 +295,17 @@ export default function WpPlanEditor() {
     };
     loadLookups();
     return () => { active = false; };
+  }, [db]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, WP_EMPLOYEES_COLLECTION), (snap) => {
+      const next = snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) } as WpEmployee));
+      setEmployees(next.length ? next : WP_EMPLOYEE_SEED);
+    }, (err) => {
+      console.warn('WP employees collection unavailable; using seed data.', err);
+      setEmployees(WP_EMPLOYEE_SEED);
+    });
+    return () => unsub();
   }, [db]);
 
   useEffect(() => {
@@ -367,8 +380,8 @@ export default function WpPlanEditor() {
       return coordinatorNameEn
         || toEnglishName(String(planOwner?.createdBy?.fullName || planOwner?.createdBy?.email || ''), 'Coordinator');
     }
-    return toEnglishName(fullName, user?.email?.split('@')[0] || 'Coordinator');
-  }, [isEdit, copyId, coordinatorNameEn, planOwner, fullName, user?.email]);
+    return toEnglishName(fullName, wpUser?.memberCode || 'Coordinator');
+  }, [isEdit, copyId, coordinatorNameEn, planOwner, fullName, wpUser?.memberCode]);
   const displayCoordinatorLabel = displayCoordinatorName === 'Coordinator' ? 'منسق' : displayCoordinatorName;
 
   const engineerCandidates = useMemo(() => {
@@ -864,7 +877,7 @@ export default function WpPlanEditor() {
   }, [hasUnsavedChanges]), { capture: true });
 
   const savePlan = async (nextStatus: WpPlanStatus) => {
-    if (!user?.uid || readOnly) return;
+    if (!wpUser?.id || readOnly) return;
     setError(null);
     setSuccess(null);
     const validationError = validate();
@@ -876,15 +889,15 @@ export default function WpPlanEditor() {
     try {
       const groupsPayload = buildGroupsPayload();
       const savedNextSignature = planSignature(nextStatus, workDate, groupsPayload);
-      const ownerUid = isEdit && planOwner?.createdByUid ? planOwner.createdByUid : user.uid;
+      const ownerUid = isEdit && planOwner?.createdByUid ? planOwner.createdByUid : wpUser.id;
       const ownerInfo = isEdit && planOwner?.createdBy
         ? planOwner.createdBy
         : {
-            uid: user.uid,
-            email: user.email || null,
+            uid: wpUser.id,
+            email: wpUser.authEmail || null,
             fullName: fullName || null,
           };
-      const fallbackName = user.email?.split('@')[0] || 'Coordinator';
+      const fallbackName = wpUser.memberCode || 'Coordinator';
       const coordinatorNameEn = toEnglishName(String(ownerInfo.fullName || ''), fallbackName);
       const basePayload = {
         workDate,
@@ -1242,6 +1255,9 @@ export default function WpPlanEditor() {
     .slice(0, 20);
 
   if (loading) return <div className="card p-6" dir="rtl">جاري التحميل...</div>;
+  if (!canManagePlans && !isEdit) {
+    return <div className="alert alert-error" dir="rtl">لا توجد صلاحية لإنشاء خطط العمل.</div>;
+  }
 
   return (
     <div className="space-y-4 text-right" dir="rtl">

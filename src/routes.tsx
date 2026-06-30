@@ -18,7 +18,11 @@ import AdminSeedUsers from './pages/AdminSeedUsers';
 import RequestDetails from './pages/RequestDetails';
 import WpPlans from './pages/WpPlans';
 import WpPlanEditor from './pages/WpPlanEditor';
+import WpLogin from './pages/WpLogin';
+import WpAdmin from './pages/WpAdmin';
+import WpProfile from './pages/WpProfile';
 import { useAuth } from './context/AuthContext';
+import { useWpAuth } from './context/WpAuthContext';
 import AppShell from './components/AppShell';
 
 function Protected({ children, shell = true }: { children: JSX.Element; shell?: boolean }) {
@@ -28,11 +32,18 @@ function Protected({ children, shell = true }: { children: JSX.Element; shell?: 
   return shell ? <AppShell>{children}</AppShell> : children;
 }
 
+function WpProtected({ children, shell = true }: { children: JSX.Element; shell?: boolean }) {
+  const { wpUser, loading } = useWpAuth();
+  if (loading) return <div className="p-6 text-center text-gray-500">جاري التحميل...</div>;
+  if (!wpUser) return <Navigate to="/wp/login" replace />;
+  return shell ? <AppShell>{children}</AppShell> : children;
+}
+
 const basename = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Protected shell={false}><AppLauncher /></Protected> },
-  { path: '/apps', element: <Protected shell={false}><AppLauncher /></Protected> },
+  { path: '/', element: <AppLauncher /> },
+  { path: '/apps', element: <AppLauncher /> },
   { path: '/requests', element: <Protected><Requests /></Protected> },
   { path: '/requests/new', element: <Protected><NewRequest /></Protected> },
   { path: '/requests/:id', element: <Protected><RequestDetails /></Protected> },
@@ -51,9 +62,12 @@ export const router = createBrowserRouter([
   { path: '/users/:uid', element: <Protected><UsersNew /></Protected> },
   { path: '/admin/seed', element: <Protected><AdminSeed /></Protected> },
   { path: '/admin/seed-users', element: <Protected><AdminSeedUsers /></Protected> },
-  { path: '/wp', element: <Protected><WpPlans /></Protected> },
-  { path: '/wp/new', element: <Protected><WpPlanEditor /></Protected> },
-  { path: '/wp/:id', element: <Protected><WpPlanEditor /></Protected> },
+  { path: '/wp/login', element: <WpLogin /> },
+  { path: '/wp', element: <WpProtected><WpPlans /></WpProtected> },
+  { path: '/wp/new', element: <WpProtected><WpPlanEditor /></WpProtected> },
+  { path: '/wp/admin', element: <WpProtected><WpAdmin /></WpProtected> },
+  { path: '/wp/profile', element: <WpProtected><WpProfile /></WpProtected> },
+  { path: '/wp/:id', element: <WpProtected><WpPlanEditor /></WpProtected> },
   { path: '/login', element: <Login /> },
   { path: '*', element: <Navigate to="/apps" replace /> },
 ], { basename });

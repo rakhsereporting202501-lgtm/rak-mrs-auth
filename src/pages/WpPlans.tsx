@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, deleteDoc, doc, getFirestore, limit, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { ClipboardList, Copy, Plus, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
-import { initFirebase } from '../lib/firebase';
-import { useAuth } from '../context/AuthContext';
+import { getWpDb } from '../lib/wpFirebase';
+import { useWpAuth } from '../context/WpAuthContext';
 import type { WpPlanDoc } from '../lib/wpTypes';
 import { timestampMs, WP_WORK_PLANS_COLLECTION } from '../lib/wpTypes';
 
@@ -51,7 +51,7 @@ function planSearchText(plan: WpPlanDoc) {
 }
 
 export default function WpPlans() {
-  const { user, role } = useAuth();
+  const { wpUser, isAdmin, canManagePlans } = useWpAuth();
   const nav = useNavigate();
   const [plans, setPlans] = useState<WpPlanDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,7 +75,6 @@ export default function WpPlans() {
   ));
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => savedFilters.sortDir === 'asc' ? 'asc' : 'desc');
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
-  const isAdmin = !!role?.roles?.admin;
 
   useEffect(() => {
     try {
@@ -90,13 +89,14 @@ export default function WpPlans() {
   }, [qText, statusFilter, dateFilter, sortKey, sortDir]);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    const { app } = initFirebase();
-    const db = getFirestore(app);
+    if (!wpUser?.id) return;
+    const db = getWpDb();
     const base = collection(db, WP_WORK_PLANS_COLLECTION);
     const q = isAdmin
       ? query(base, limit(150))
-      : query(base, where('createdByUid', '==', user.uid), limit(150));
+      : canManagePlans
+        ? query(base, where('createdByUid', '==', wpUser.id), limit(150))
+        : query(base, where('status', '==', 'SUBMITTED'), limit(150));
     const unsub = onSnapshot(q, (snap) => {
       const next = snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) } as WpPlanDoc));
       next.sort((a, b) => timestampMs(b.updatedAt || b.createdAt) - timestampMs(a.updatedAt || a.createdAt));
@@ -111,7 +111,7 @@ export default function WpPlans() {
       setLoading(false);
     });
     return () => unsub();
-  }, [user?.uid, isAdmin]);
+  }, [wpUser?.id, isAdmin, canManagePlans]);
 
   const filteredPlans = useMemo(() => {
     const tokens = qText.toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean);
@@ -149,8 +149,7 @@ export default function WpPlans() {
     setDeleteBusyId(plan.id);
     setError(null);
     try {
-      const { app } = initFirebase();
-      const db = getFirestore(app);
+      const db = getWpDb();
       await deleteDoc(doc(db, WP_WORK_PLANS_COLLECTION, plan.id));
     } catch (err: any) {
       setError(err?.code === 'permission-denied' ? 'لا توجد صلاحية. يمكن حذف المسودات فقط.' : 'تعذر حذف المسودة.');
@@ -170,10 +169,12 @@ export default function WpPlans() {
           <SlidersHorizontal className="h-4 w-4" />
           <span>بحث</span>
         </button>
-        <button type="button" className="btn-primary inline-flex items-center justify-center gap-2" onClick={() => nav('/wp/new')}>
-          <Plus className="h-4 w-4" />
-          <span>خطة جديدة</span>
-        </button>
+        {canManagePlans && (
+          <button type="button" className="btn-primary inline-flex items-center justify-center gap-2" onClick={() => nav('/wp/new')}>
+            <Plus className="h-4 w-4" />
+            <span>خطة جديدة</span>
+          </button>
+        )}
       </div>
 
       {filtersOpen && (
@@ -250,7 +251,7 @@ export default function WpPlans() {
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  {plan.status === 'DRAFT' && (
+                  {canManagePlans && plan.status === 'DRAFT' && (isAdmin || plan.createdByUid === wpUser?.id) && (
                     <button
                       type="button"
                       className="btn-ghost inline-flex items-center gap-2 text-red-600 disabled:opacity-50"
@@ -264,17 +265,19 @@ export default function WpPlans() {
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="btn-ghost inline-flex items-center gap-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      nav(`/wp/new?copy=${plan.id}`);
-                    }}
-                    aria-label="نسخ الخطة"
-                  >
-                    <Copy className="h-4 w-4 icon-blue" />
-                  </button>
+                  {canManagePlans && (
+                    <button
+                      type="button"
+                      className="btn-ghost inline-flex items-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        nav(`/wp/new?copy=${plan.id}`);
+                      }}
+                      aria-label="نسخ الخطة"
+                    >
+                      <Copy className="h-4 w-4 icon-blue" />
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="mt-auto flex justify-end pt-3">
