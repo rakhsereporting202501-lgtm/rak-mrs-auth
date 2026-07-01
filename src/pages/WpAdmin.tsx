@@ -9,7 +9,24 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { ref, remove } from 'firebase/database';
-import { Building2, CheckCircle2, Database, Hammer, MapPin, Monitor, Plus, Save, Search, Shield, Trash2, UserRound, Wrench, X } from 'lucide-react';
+import {
+  Building2,
+  CheckCircle2,
+  Database,
+  Hammer,
+  LayoutDashboard,
+  MapPin,
+  Monitor,
+  Pencil,
+  Plus,
+  Save,
+  Search,
+  Shield,
+  Trash2,
+  UserRound,
+  Wrench,
+  X,
+} from 'lucide-react';
 import { useWpAuth } from '../context/WpAuthContext';
 import { WP_FIREBASE_API_KEY, getWpDb, getWpRealtimeDb } from '../lib/wpFirebase';
 import { cleanWpText, displayWpPersonName, normalizeWpEmployee, splitWpName, wpEmployeeSearchText } from '../lib/wpPeople';
@@ -34,6 +51,7 @@ import {
 import { timestampMs } from '../lib/wpTypes';
 
 type Tab = 'employees' | 'coordinators' | 'projects' | 'engineers' | 'positions' | 'departments' | 'cities' | 'sessions';
+type EditableTab = Exclude<Tab, 'sessions'>;
 
 type EmployeeForm = {
   id: string;
@@ -58,6 +76,8 @@ type CoordinatorForm = {
   includeEmployeeIds: string[];
   excludeEmployeeIds: string[];
 };
+
+type SearchState = Record<Tab, string>;
 
 const emptyEmployeeForm: EmployeeForm = {
   id: '',
@@ -87,12 +107,19 @@ const emptyProject: WpProject = { id: '', code: '', name: '', nameAr: '', nameEn
 const emptyEngineer: WpEngineer = { id: '', name: '', nameAr: '', nameEn: '', position: 'Engineer', department: '', active: true };
 const emptyLookup: WpLookupDoc = { id: '', name: '', active: true };
 
+const emptySearch: SearchState = {
+  employees: '',
+  coordinators: '',
+  projects: '',
+  engineers: '',
+  positions: '',
+  departments: '',
+  cities: '',
+  sessions: '',
+};
+
 function safeDocId(value: string) {
   return cleanWpText(value).replace(/[\/#?[\]]+/g, '-');
-}
-
-function optionName(item: WpLookupDoc | string) {
-  return typeof item === 'string' ? item : item.name;
 }
 
 function asLookup(docId: string, data: any): WpLookupDoc {
@@ -103,6 +130,16 @@ function asLookup(docId: string, data: any): WpLookupDoc {
     createdAt: data?.createdAt,
     updatedAt: data?.updatedAt,
   };
+}
+
+function searchTokens(value: string) {
+  return value.toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean);
+}
+
+function matchesSearch(text: string, query: string) {
+  const hay = text.toLowerCase();
+  const tokens = searchTokens(query);
+  return !tokens.length || tokens.every((token) => hay.includes(token));
 }
 
 async function createPasswordAccount(email: string, password: string) {
@@ -122,6 +159,7 @@ async function createPasswordAccount(email: string, password: string) {
 export default function WpAdmin() {
   const { isAdmin, locale } = useWpAuth();
   const [tab, setTab] = useState<Tab>('employees');
+  const [dialogTab, setDialogTab] = useState<EditableTab | null>(null);
   const [employees, setEmployees] = useState<WpEmployee[]>([]);
   const [projects, setProjects] = useState<WpProject[]>([]);
   const [engineers, setEngineers] = useState<WpEngineer[]>([]);
@@ -130,7 +168,7 @@ export default function WpAdmin() {
   const [cities, setCities] = useState<WpLookupDoc[]>([]);
   const [coordinators, setCoordinators] = useState<WpCoordinatorDoc[]>([]);
   const [sessions, setSessions] = useState<WpSessionDoc[]>([]);
-  const [qText, setQText] = useState('');
+  const [searchByTab, setSearchByTab] = useState<SearchState>(emptySearch);
   const [coordinatorIncludeSearch, setCoordinatorIncludeSearch] = useState('');
   const [coordinatorExcludeSearch, setCoordinatorExcludeSearch] = useState('');
   const [employeeForm, setEmployeeForm] = useState<EmployeeForm>(emptyEmployeeForm);
@@ -178,15 +216,6 @@ export default function WpAdmin() {
     return () => unsubs.forEach((unsub) => unsub());
   }, [locale]);
 
-  const filteredEmployees = useMemo(() => {
-    const tokens = qText.toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean);
-    return employees.filter((employee) => {
-      if (!tokens.length) return true;
-      const hay = wpEmployeeSearchText(employee);
-      return tokens.every((token) => hay.includes(token));
-    });
-  }, [employees, qText]);
-
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
 
   const coordinatorEmployeeOptions = useMemo(
@@ -196,7 +225,7 @@ export default function WpAdmin() {
 
   const coordinatorSearchResults = (searchText: string, selectedIds: string[]) => {
     const selected = new Set(selectedIds);
-    const tokens = searchText.toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean);
+    const tokens = searchTokens(searchText);
     return coordinatorEmployeeOptions
       .filter((employee) => {
         if (selected.has(employee.id)) return false;
@@ -213,8 +242,80 @@ export default function WpAdmin() {
     return displayWpPersonName(employee, locale);
   };
 
-  const editEmployee = (employee: WpEmployee) => {
+  const selectedCoordinatorOverlaps = useMemo(() => {
+    const selectedDepartments = new Set(coordinatorForm.departmentIds);
+    const selectedPeople = new Set([...coordinatorForm.includeEmployeeIds, ...coordinatorForm.excludeEmployeeIds]);
+    return coordinators
+      .filter((coordinator) => coordinator.employeeId !== coordinatorForm.employeeId)
+      .filter((coordinator) => (
+        (coordinator.departmentIds || []).some((dept) => selectedDepartments.has(dept))
+        || (coordinator.includeEmployeeIds || []).some((personId) => selectedPeople.has(personId))
+      ));
+  }, [coordinators, coordinatorForm]);
+
+  const currentSearch = searchByTab[tab] || '';
+  const setCurrentSearch = (value: string) => setSearchByTab((prev) => ({ ...prev, [tab]: value }));
+
+  const filteredEmployees = useMemo(() => employees.filter((employee) => matchesSearch(wpEmployeeSearchText(employee), searchByTab.employees)), [employees, searchByTab.employees]);
+  const filteredProjects = useMemo(() => projects.filter((project) => matchesSearch([
+    project.id,
+    project.code || '',
+    project.name || '',
+    project.nameAr || '',
+    project.nameEn || '',
+  ].join(' '), searchByTab.projects)), [projects, searchByTab.projects]);
+  const filteredEngineers = useMemo(() => engineers.filter((engineer) => matchesSearch([
+    engineer.id,
+    engineer.name || '',
+    engineer.nameAr || '',
+    engineer.nameEn || '',
+    engineer.position || '',
+    engineer.department || '',
+  ].join(' '), searchByTab.engineers)), [engineers, searchByTab.engineers]);
+  const filteredPositions = useMemo(() => positions.filter((item) => matchesSearch(`${item.id} ${item.name}`, searchByTab.positions)), [positions, searchByTab.positions]);
+  const filteredDepartments = useMemo(() => departments.filter((item) => matchesSearch(`${item.id} ${item.name}`, searchByTab.departments)), [departments, searchByTab.departments]);
+  const filteredCities = useMemo(() => cities.filter((item) => matchesSearch(`${item.id} ${item.name}`, searchByTab.cities)), [cities, searchByTab.cities]);
+  const filteredCoordinators = useMemo(() => coordinators.filter((coordinator) => matchesSearch([
+    coordinator.employeeId,
+    employeeLabel(coordinator.employeeId),
+    ...(coordinator.departmentIds || []),
+    ...(coordinator.includeEmployeeIds || []).map(employeeLabel),
+    ...(coordinator.excludeEmployeeIds || []).map(employeeLabel),
+  ].join(' '), searchByTab.coordinators)), [coordinators, employeeById, locale, searchByTab.coordinators]);
+  const filteredSessions = useMemo(() => sessions.filter((session) => matchesSearch([
+    session.id,
+    session.employeeId,
+    session.employeeName,
+    session.accountType,
+    session.authUid || '',
+    session.active ? 'active' : 'closed',
+    session.userAgent || '',
+  ].join(' '), searchByTab.sessions)), [sessions, searchByTab.sessions]);
+
+  const resetMessages = () => {
+    setMessage(null);
+    setError(null);
+  };
+
+  const openNew = (target: EditableTab = tab as EditableTab) => {
+    resetMessages();
+    setTab(target);
+    if (target === 'employees') setEmployeeForm(emptyEmployeeForm);
+    if (target === 'coordinators') {
+      setCoordinatorForm(emptyCoordinatorForm);
+      setCoordinatorIncludeSearch('');
+      setCoordinatorExcludeSearch('');
+    }
+    if (target === 'projects') setProjectForm(emptyProject);
+    if (target === 'engineers') setEngineerForm(emptyEngineer);
+    if (target === 'positions' || target === 'departments' || target === 'cities') setLookupForm(emptyLookup);
+    setDialogTab(target);
+  };
+
+  const openEmployee = (employee: WpEmployee) => {
     const split = splitWpName(employee.fullName);
+    resetMessages();
+    setTab('employees');
     setEmployeeForm({
       id: employee.id,
       memberCode: employee.memberCode || employee.id,
@@ -230,17 +331,36 @@ export default function WpAdmin() {
       authUid: employee.authUid || '',
       password: '',
     });
-    setTab('employees');
+    setDialogTab('employees');
   };
+
+  const openCoordinator = (coordinator: WpCoordinatorDoc) => {
+    resetMessages();
+    setTab('coordinators');
+    setCoordinatorForm({
+      employeeId: coordinator.employeeId,
+      active: coordinator.active !== false,
+      departmentIds: coordinator.departmentIds || [],
+      includeEmployeeIds: coordinator.includeEmployeeIds || [],
+      excludeEmployeeIds: coordinator.excludeEmployeeIds || [],
+    });
+    setCoordinatorIncludeSearch('');
+    setCoordinatorExcludeSearch('');
+    setDialogTab('coordinators');
+  };
+
+  const lookupOptions = (items: WpLookupDoc[]) => items.filter((item) => item.active !== false).map((item) => (
+    <option key={item.id} value={item.name}>{item.name}</option>
+  ));
 
   const saveEmployee = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
-    setMessage(null);
-    setError(null);
+    resetMessages();
     try {
       const id = safeDocId(employeeForm.id || employeeForm.memberCode || employeeForm.fullName);
       const fullName = cleanWpText(employeeForm.fullName || [employeeForm.nameEn, employeeForm.nameAr].filter(Boolean).join(' '));
+      if (!fullName) throw new Error(isAr ? 'اكتب اسم الموظف.' : 'Enter employee name.');
       if (!employeeForm.position || !employeeForm.department || !employeeForm.city) {
         throw new Error(isAr ? 'اختر المنصب والقسم والمدينة.' : 'Choose position, department, and city.');
       }
@@ -261,6 +381,7 @@ export default function WpAdmin() {
         updatedAt: serverTimestamp(),
       }, { merge: true });
       setEmployeeForm(emptyEmployeeForm);
+      setDialogTab(null);
       setMessage(isAr ? 'تم حفظ الموظف.' : 'Employee saved.');
     } catch (err: any) {
       setError(err?.message || (isAr ? 'تعذر حفظ الموظف.' : 'Could not save employee.'));
@@ -273,17 +394,9 @@ export default function WpAdmin() {
     if (employee.accountType === 'ADMIN') return;
     if (!window.confirm(isAr ? 'هل تريد حذف هذا الموظف؟' : 'Delete this employee?')) return;
     await deleteDoc(doc(getWpDb(), WP_EMPLOYEES_COLLECTION, employee.id));
-  };
-
-  const editCoordinator = (coordinator: WpCoordinatorDoc) => {
-    setCoordinatorForm({
-      employeeId: coordinator.employeeId,
-      active: coordinator.active !== false,
-      departmentIds: coordinator.departmentIds || [],
-      includeEmployeeIds: coordinator.includeEmployeeIds || [],
-      excludeEmployeeIds: coordinator.excludeEmployeeIds || [],
-    });
-    setTab('coordinators');
+    setDialogTab(null);
+    setEmployeeForm(emptyEmployeeForm);
+    setMessage(isAr ? 'تم حذف الموظف.' : 'Employee deleted.');
   };
 
   const saveCoordinator = async (event: FormEvent) => {
@@ -291,8 +404,7 @@ export default function WpAdmin() {
     const employee = employeeById.get(coordinatorForm.employeeId);
     if (!employee) return;
     setBusy(true);
-    setMessage(null);
-    setError(null);
+    resetMessages();
     try {
       await setDoc(doc(getWpDb(), WP_COORDINATORS_COLLECTION, employee.id), {
         id: employee.id,
@@ -311,6 +423,7 @@ export default function WpAdmin() {
       setCoordinatorForm(emptyCoordinatorForm);
       setCoordinatorIncludeSearch('');
       setCoordinatorExcludeSearch('');
+      setDialogTab(null);
       setMessage(isAr ? 'تم حفظ المنسق.' : 'Coordinator saved.');
     } catch (err: any) {
       setError(err?.message || (isAr ? 'تعذر حفظ المنسق.' : 'Could not save coordinator.'));
@@ -319,43 +432,97 @@ export default function WpAdmin() {
     }
   };
 
+  const deleteCoordinator = async () => {
+    const employee = employeeById.get(coordinatorForm.employeeId);
+    if (!employee) return;
+    if (!window.confirm(isAr ? 'هل تريد حذف صلاحية هذا المنسق؟' : 'Delete this coordinator access?')) return;
+    await deleteDoc(doc(getWpDb(), WP_COORDINATORS_COLLECTION, employee.id));
+    if (employee.accountType === 'COORDINATOR') {
+      await setDoc(doc(getWpDb(), WP_EMPLOYEES_COLLECTION, employee.id), {
+        accountType: 'VIEWER',
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    }
+    setCoordinatorForm(emptyCoordinatorForm);
+    setDialogTab(null);
+    setMessage(isAr ? 'تم حذف المنسق.' : 'Coordinator deleted.');
+  };
+
   const saveProject = async (event: FormEvent) => {
     event.preventDefault();
-    const id = safeDocId(projectForm.id || projectForm.code || projectForm.nameEn || projectForm.name || projectForm.nameAr || '');
-    if (!id) return;
-    await setDoc(doc(getWpDb(), WP_PROJECTS_COLLECTION, id), {
-      ...projectForm,
-      id,
-      active: projectForm.active !== false,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-    setProjectForm(emptyProject);
+    setBusy(true);
+    resetMessages();
+    try {
+      const id = safeDocId(projectForm.id || projectForm.code || projectForm.nameEn || projectForm.name || projectForm.nameAr || '');
+      if (!id) throw new Error(isAr ? 'اكتب اسم المشروع أو الكود.' : 'Enter project name or code.');
+      await setDoc(doc(getWpDb(), WP_PROJECTS_COLLECTION, id), {
+        ...projectForm,
+        id,
+        active: projectForm.active !== false,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setProjectForm(emptyProject);
+      setDialogTab(null);
+      setMessage(isAr ? 'تم حفظ المشروع.' : 'Project saved.');
+    } catch (err: any) {
+      setError(err?.message || (isAr ? 'تعذر حفظ المشروع.' : 'Could not save project.'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const saveEngineer = async (event: FormEvent) => {
     event.preventDefault();
-    const id = safeDocId(engineerForm.id || engineerForm.nameEn || engineerForm.name || engineerForm.nameAr || '');
-    if (!id) return;
-    await setDoc(doc(getWpDb(), WP_ENGINEERS_COLLECTION, id), {
-      ...engineerForm,
-      id,
-      active: engineerForm.active !== false,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-    setEngineerForm(emptyEngineer);
+    setBusy(true);
+    resetMessages();
+    try {
+      const id = safeDocId(engineerForm.id || engineerForm.nameEn || engineerForm.name || engineerForm.nameAr || '');
+      if (!id) throw new Error(isAr ? 'اكتب اسم المهندس.' : 'Enter engineer name.');
+      await setDoc(doc(getWpDb(), WP_ENGINEERS_COLLECTION, id), {
+        ...engineerForm,
+        id,
+        active: engineerForm.active !== false,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setEngineerForm(emptyEngineer);
+      setDialogTab(null);
+      setMessage(isAr ? 'تم حفظ المهندس.' : 'Engineer saved.');
+    } catch (err: any) {
+      setError(err?.message || (isAr ? 'تعذر حفظ المهندس.' : 'Could not save engineer.'));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const saveLookup = async (event: FormEvent, collectionName: string) => {
+  const saveLookup = async (event: FormEvent, collectionName: string, successText: string) => {
     event.preventDefault();
-    const id = safeDocId(lookupForm.id || lookupForm.name);
-    if (!id || !lookupForm.name) return;
-    await setDoc(doc(getWpDb(), collectionName, id), {
-      id,
-      name: cleanWpText(lookupForm.name),
-      active: lookupForm.active !== false,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-    setLookupForm(emptyLookup);
+    setBusy(true);
+    resetMessages();
+    try {
+      const id = safeDocId(lookupForm.id || lookupForm.name);
+      if (!id || !lookupForm.name) throw new Error(isAr ? 'اكتب الاسم.' : 'Enter name.');
+      await setDoc(doc(getWpDb(), collectionName, id), {
+        id,
+        name: cleanWpText(lookupForm.name),
+        active: lookupForm.active !== false,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setLookupForm(emptyLookup);
+      setDialogTab(null);
+      setMessage(successText);
+    } catch (err: any) {
+      setError(err?.message || (isAr ? 'تعذر الحفظ.' : 'Could not save.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteCollectionDoc = async (collectionName: string, id: string, label: string) => {
+    if (!id) return;
+    if (!window.confirm(isAr ? `هل تريد حذف ${label}؟` : `Delete ${label}?`)) return;
+    await deleteDoc(doc(getWpDb(), collectionName, id));
+    setDialogTab(null);
+    setMessage(isAr ? 'تم الحذف.' : 'Deleted.');
   };
 
   const revokeSession = async (session: WpSessionDoc) => {
@@ -371,40 +538,42 @@ export default function WpAdmin() {
     setter(selected.includes(value) ? selected.filter((entry) => entry !== value) : [...selected, value]);
   };
 
-  const selectedCoordinatorOverlaps = useMemo(() => {
-    const selectedDepartments = new Set(coordinatorForm.departmentIds);
-    const selectedPeople = new Set([...coordinatorForm.includeEmployeeIds, ...coordinatorForm.excludeEmployeeIds]);
-    return coordinators
-      .filter((coordinator) => coordinator.employeeId !== coordinatorForm.employeeId)
-      .filter((coordinator) => (
-        (coordinator.departmentIds || []).some((dept) => selectedDepartments.has(dept))
-        || (coordinator.includeEmployeeIds || []).some((personId) => selectedPeople.has(personId))
-      ));
-  }, [coordinators, coordinatorForm]);
-
   if (!isAdmin) {
     return <div className="alert alert-error" dir={isAr ? 'rtl' : 'ltr'}>{isAr ? 'هذه الصفحة خاصة بالأدمن فقط.' : 'Admin only.'}</div>;
   }
 
-  const tabButton = (key: Tab, labelAr: string, labelEn: string, Icon: any) => (
-    <button
-      type="button"
-      className={`btn-ghost inline-flex items-center gap-2 ${tab === key ? 'border-blue-300 bg-blue-50 text-blue-700' : ''}`}
-      onClick={() => {
-        setTab(key);
-        setLookupForm(emptyLookup);
-      }}
-    >
-      <Icon className="h-4 w-4" />
-      <span>{isAr ? labelAr : labelEn}</span>
-    </button>
-  );
+  const sections: Array<{
+    key: Tab;
+    labelAr: string;
+    labelEn: string;
+    helperAr: string;
+    helperEn: string;
+    count: number;
+    Icon: any;
+    canAdd: boolean;
+  }> = [
+    { key: 'employees', labelAr: 'الموظفين', labelEn: 'Employees', helperAr: 'الأسماء والصلاحيات وكلمات المرور', helperEn: 'People, roles, and login data', count: employees.length, Icon: UserRound, canAdd: true },
+    { key: 'coordinators', labelAr: 'المنسقين', labelEn: 'Coordinators', helperAr: 'الأقسام والأشخاص المسموحين', helperEn: 'Departments and allowed people', count: coordinators.length, Icon: Shield, canAdd: true },
+    { key: 'projects', labelAr: 'المشاريع', labelEn: 'Projects', helperAr: 'مشاريع خطة العمل', helperEn: 'Work plan projects', count: projects.length, Icon: Database, canAdd: true },
+    { key: 'engineers', labelAr: 'المهندسين', labelEn: 'Engineers', helperAr: 'أسماء المهندسين', helperEn: 'Engineer names', count: engineers.length, Icon: Hammer, canAdd: true },
+    { key: 'positions', labelAr: 'المناصب', labelEn: 'Positions', helperAr: 'قائمة المناصب المتاحة', helperEn: 'Available positions', count: positions.length, Icon: Wrench, canAdd: true },
+    { key: 'departments', labelAr: 'الأقسام', labelEn: 'Departments', helperAr: 'قائمة الأقسام المتاحة', helperEn: 'Available departments', count: departments.length, Icon: Building2, canAdd: true },
+    { key: 'cities', labelAr: 'المدن', labelEn: 'Cities', helperAr: 'قائمة المدن المتاحة', helperEn: 'Available cities', count: cities.length, Icon: MapPin, canAdd: true },
+    { key: 'sessions', labelAr: 'الجلسات', labelEn: 'Sessions', helperAr: 'الجلسات النشطة والقديمة', helperEn: 'Active and old sessions', count: sessions.length, Icon: Monitor, canAdd: false },
+  ];
+  const activeSection = sections.find((section) => section.key === tab) || sections[0];
 
   const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <label className="block">
       <span className="block text-xs text-gray-500 mb-1">{label}</span>
       {children}
     </label>
+  );
+
+  const StatusBadge = ({ active }: { active?: boolean }) => (
+    <span className={`badge ${active === false ? 'border-gray-200 bg-gray-50 text-gray-600' : 'border-green-200 bg-green-50 text-green-700'}`}>
+      {active === false ? (isAr ? 'غير فعال' : 'Inactive') : (isAr ? 'فعال' : 'Active')}
+    </span>
   );
 
   const renderCoordinatorPeoplePicker = ({
@@ -444,7 +613,7 @@ export default function WpAdmin() {
         </div>
 
         <div className="relative mt-3">
-          <Search className={`absolute top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
+          <Search className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
           <input
             className={`input ${isAr ? 'pr-9 text-right' : 'pl-9 text-left'}`}
             value={search}
@@ -475,7 +644,7 @@ export default function WpAdmin() {
           )}
         </div>
 
-        <div className="mt-3 grid max-h-80 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+        <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
           {results.map((employee) => (
             <button
               key={employee.id}
@@ -500,420 +669,555 @@ export default function WpAdmin() {
     );
   };
 
-  const lookupOptions = (items: WpLookupDoc[]) => items.filter((item) => item.active !== false).map((item) => (
-    <option key={item.id} value={item.name}>{item.name}</option>
-  ));
-
-  const renderLookupTab = (items: WpLookupDoc[], collectionName: string, labelAr: string, labelEn: string) => (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="card p-4">
-        <div className="font-semibold mb-3">{isAr ? labelAr : labelEn}</div>
-        <div className="max-h-[620px] overflow-y-auto space-y-2">
-          {items.map((item) => (
-            <button key={item.id} type="button" className="w-full rounded-2xl border border-gray-200 p-3 text-start hover:bg-blue-50" onClick={() => setLookupForm(item)}>
-              <div className="font-semibold">{item.name}</div>
-              <div className="text-xs text-gray-500">{item.active === false ? 'inactive' : 'active'}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-      <form className="card p-4 space-y-3" onSubmit={(event) => saveLookup(event, collectionName)}>
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <div className="font-semibold">{isAr ? 'إضافة / تعديل' : 'Add / Edit'}</div>
-            <div className="mt-1 text-xs text-gray-500">{isAr ? 'اكتب قيمة جديدة أو اختر عنصراً من القائمة للتعديل.' : 'Enter a new value or choose an item to edit.'}</div>
+  const renderEmployees = () => (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {filteredEmployees.map((employee) => (
+        <button key={employee.id} type="button" className="rounded-2xl border border-gray-200 bg-white p-4 text-start shadow-sm hover:border-blue-200 hover:bg-blue-50" onClick={() => openEmployee(employee)}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{displayWpPersonName(employee, locale)}</div>
+              <div className="mt-1 truncate text-xs text-gray-500">{employee.memberCode || employee.id}</div>
+            </div>
+            <Pencil className="h-4 w-4 shrink-0 text-gray-400" />
           </div>
-          <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => setLookupForm(emptyLookup)}>
-            <Plus className="h-4 w-4" />
-            <span>{isAr ? 'جديد' : 'New'}</span>
-          </button>
-        </div>
-        <Field label="ID">
-          <input className="input" value={lookupForm.id} onChange={(e) => setLookupForm((p) => ({ ...p, id: e.target.value }))} />
-        </Field>
-        <Field label={isAr ? 'الاسم' : 'Name'}>
-          <input className="input" value={lookupForm.name} onChange={(e) => setLookupForm((p) => ({ ...p, name: e.target.value }))} />
-        </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={lookupForm.active !== false} onChange={(e) => setLookupForm((p) => ({ ...p, active: e.target.checked }))} />
-          <span>{isAr ? 'فعال' : 'Active'}</span>
-        </label>
-        <button className="btn-primary inline-flex items-center gap-2" type="submit">
-          <Save className="h-4 w-4" />
-          <span>{isAr ? 'حفظ' : 'Save'}</span>
+          <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+            <span className="badge border-blue-200 bg-blue-50 text-blue-700">{employee.accountType || 'VIEWER'}</span>
+            <StatusBadge active={employee.active} />
+          </div>
+          <div className="mt-3 text-xs leading-5 text-gray-600">
+            <div>{employee.position || '-'}</div>
+            <div>{employee.department || '-'} - {employee.city || '-'}</div>
+          </div>
         </button>
-      </form>
+      ))}
+      {!filteredEmployees.length && <EmptyList />}
     </div>
   );
 
-  return (
-    <div className="space-y-4 text-right" dir={isAr ? 'rtl' : 'ltr'}>
-      <div>
-        <div className="text-xl font-semibold">{isAr ? 'إدارة خطط العمل' : 'Work Plans Admin'}</div>
-        <div className="text-sm text-gray-500 mt-1">
-          {isAr ? 'إدارة الموظفين والمنسقين والمشاريع والقوائم.' : 'Manage employees, coordinators, projects, and lists.'}
+  const renderCoordinators = () => (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {filteredCoordinators.map((coordinator) => (
+        <button key={coordinator.id} type="button" className="rounded-2xl border border-gray-200 bg-white p-4 text-start shadow-sm hover:border-blue-200 hover:bg-blue-50" onClick={() => openCoordinator(coordinator)}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{employeeLabel(coordinator.employeeId)}</div>
+              <div className="mt-1 truncate text-xs text-gray-500">{(coordinator.departmentIds || []).join(' - ') || '-'}</div>
+            </div>
+            <Pencil className="h-4 w-4 shrink-0 text-gray-400" />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <StatusBadge active={coordinator.active} />
+            <span className="badge border-emerald-200 bg-emerald-50 text-emerald-700">
+              {isAr ? 'إضافي' : 'Extra'} {(coordinator.includeEmployeeIds || []).length}
+            </span>
+            <span className="badge border-rose-200 bg-rose-50 text-rose-700">
+              {isAr ? 'مستثنى' : 'Excluded'} {(coordinator.excludeEmployeeIds || []).length}
+            </span>
+          </div>
+        </button>
+      ))}
+      {!filteredCoordinators.length && <EmptyList />}
+    </div>
+  );
+
+  const renderProjects = () => (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {filteredProjects.map((project) => (
+        <button key={project.id} type="button" className="rounded-2xl border border-gray-200 bg-white p-4 text-start shadow-sm hover:border-blue-200 hover:bg-blue-50" onClick={() => {
+          resetMessages();
+          setTab('projects');
+          setProjectForm(project);
+          setDialogTab('projects');
+        }}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{project.nameEn || project.name || project.nameAr || project.code || project.id}</div>
+              <div className="mt-1 truncate text-xs text-gray-500">{project.code || project.id}</div>
+            </div>
+            <Pencil className="h-4 w-4 shrink-0 text-gray-400" />
+          </div>
+          <div className="mt-3"><StatusBadge active={project.active} /></div>
+        </button>
+      ))}
+      {!filteredProjects.length && <EmptyList />}
+    </div>
+  );
+
+  const renderEngineers = () => (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {filteredEngineers.map((engineer) => (
+        <button key={engineer.id} type="button" className="rounded-2xl border border-gray-200 bg-white p-4 text-start shadow-sm hover:border-blue-200 hover:bg-blue-50" onClick={() => {
+          resetMessages();
+          setTab('engineers');
+          setEngineerForm(engineer);
+          setDialogTab('engineers');
+        }}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{engineer.nameAr || engineer.nameEn || engineer.name || engineer.id}</div>
+              <div className="mt-1 truncate text-xs text-gray-500">{engineer.position || '-'} - {engineer.department || '-'}</div>
+            </div>
+            <Pencil className="h-4 w-4 shrink-0 text-gray-400" />
+          </div>
+          <div className="mt-3"><StatusBadge active={engineer.active} /></div>
+        </button>
+      ))}
+      {!filteredEngineers.length && <EmptyList />}
+    </div>
+  );
+
+  const renderLookupCards = (items: WpLookupDoc[], target: EditableTab) => (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => (
+        <button key={item.id} type="button" className="rounded-2xl border border-gray-200 bg-white p-4 text-start shadow-sm hover:border-blue-200 hover:bg-blue-50" onClick={() => {
+          resetMessages();
+          setTab(target);
+          setLookupForm(item);
+          setDialogTab(target);
+        }}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{item.name}</div>
+              <div className="mt-1 truncate text-xs text-gray-500">{item.id}</div>
+            </div>
+            <Pencil className="h-4 w-4 shrink-0 text-gray-400" />
+          </div>
+          <div className="mt-3"><StatusBadge active={item.active} /></div>
+        </button>
+      ))}
+      {!items.length && <EmptyList />}
+    </div>
+  );
+
+  const renderSessions = () => (
+    <div className="space-y-2">
+      {filteredSessions.map((session) => (
+        <div key={session.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-semibold">{session.employeeName}</div>
+              <div className="mt-1 truncate text-xs text-gray-500">{session.id} - {session.accountType}</div>
+              <div className="mt-1 truncate text-xs text-gray-400">{session.userAgent || '-'}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`badge ${session.active ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-50 text-gray-600'}`}>
+                {session.active ? (isAr ? 'نشطة' : 'Active') : (isAr ? 'مغلقة' : 'Closed')}
+              </span>
+              {session.active && (
+                <button type="button" className="btn-ghost text-red-600" onClick={() => revokeSession(session)}>
+                  {isAr ? 'إخراج' : 'Revoke'}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
+      ))}
+      {!filteredSessions.length && <EmptyList />}
+    </div>
+  );
+
+  function EmptyList() {
+    return (
+      <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500 md:col-span-2 xl:col-span-3">
+        {isAr ? 'لا توجد نتائج مطابقة.' : 'No matching results.'}
+      </div>
+    );
+  }
+
+  const renderList = () => {
+    if (tab === 'employees') return renderEmployees();
+    if (tab === 'coordinators') return renderCoordinators();
+    if (tab === 'projects') return renderProjects();
+    if (tab === 'engineers') return renderEngineers();
+    if (tab === 'positions') return renderLookupCards(filteredPositions, 'positions');
+    if (tab === 'departments') return renderLookupCards(filteredDepartments, 'departments');
+    if (tab === 'cities') return renderLookupCards(filteredCities, 'cities');
+    return renderSessions();
+  };
+
+  const renderEmployeeForm = () => (
+    <form className="space-y-3" onSubmit={saveEmployee}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="ID"><input className="input" value={employeeForm.id} onChange={(e) => setEmployeeForm((p) => ({ ...p, id: e.target.value }))} /></Field>
+        <Field label={isAr ? 'كود الموظف' : 'Member code'}><input className="input" value={employeeForm.memberCode} onChange={(e) => setEmployeeForm((p) => ({ ...p, memberCode: e.target.value }))} /></Field>
+      </div>
+      <Field label={isAr ? 'الاسم الكامل' : 'Full name'}><input className="input" value={employeeForm.fullName} onChange={(e) => setEmployeeForm((p) => ({ ...p, fullName: e.target.value }))} /></Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={isAr ? 'الاسم العربي' : 'Arabic name'}><input className="input" value={employeeForm.nameAr} onChange={(e) => setEmployeeForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
+        <Field label={isAr ? 'الاسم الإنجليزي' : 'English name'}><input className="input" value={employeeForm.nameEn} onChange={(e) => setEmployeeForm((p) => ({ ...p, nameEn: e.target.value }))} /></Field>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label={isAr ? 'المنصب' : 'Position'}>
+          <select className="input" value={employeeForm.position} onChange={(e) => setEmployeeForm((p) => ({ ...p, position: e.target.value }))}>
+            <option value="">{isAr ? 'اختر المنصب' : 'Choose position'}</option>
+            {lookupOptions(positions)}
+          </select>
+        </Field>
+        <Field label={isAr ? 'القسم' : 'Department'}>
+          <select className="input" value={employeeForm.department} onChange={(e) => setEmployeeForm((p) => ({ ...p, department: e.target.value }))}>
+            <option value="">{isAr ? 'اختر القسم' : 'Choose department'}</option>
+            {lookupOptions(departments)}
+          </select>
+        </Field>
+        <Field label={isAr ? 'المدينة' : 'City'}>
+          <select className="input" value={employeeForm.city} onChange={(e) => setEmployeeForm((p) => ({ ...p, city: e.target.value }))}>
+            <option value="">{isAr ? 'اختر المدينة' : 'Choose city'}</option>
+            {lookupOptions(cities)}
+          </select>
+        </Field>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={isAr ? 'نوع الحساب' : 'Account type'}>
+          <select className="input" value={employeeForm.accountType} onChange={(e) => setEmployeeForm((p) => ({ ...p, accountType: e.target.value as WpAccountType }))}>
+            <option value="VIEWER">VIEWER</option>
+            <option value="COORDINATOR">COORDINATOR</option>
+            <option value="ADMIN">ADMIN</option>
+          </select>
+        </Field>
+        <Field label={isAr ? 'بريد تسجيل الدخول' : 'Login email'}><input className="input" value={employeeForm.authEmail} onChange={(e) => setEmployeeForm((p) => ({ ...p, authEmail: e.target.value }))} /></Field>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={isAr ? 'كلمة مرور جديدة' : 'New password'}><input className="input" type="password" value={employeeForm.password} onChange={(e) => setEmployeeForm((p) => ({ ...p, password: e.target.value }))} /></Field>
+        <Field label="Firebase Auth UID"><input className="input bg-gray-50" value={employeeForm.authUid} onChange={(e) => setEmployeeForm((p) => ({ ...p, authUid: e.target.value }))} /></Field>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={employeeForm.active} onChange={(e) => setEmployeeForm((p) => ({ ...p, active: e.target.checked }))} />
+        <span>{isAr ? 'فعال' : 'Active'}</span>
+      </label>
+      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-800">
+        {isAr
+          ? 'لجعل الموظف يطلب كلمة مرور عند الدخول: اختر COORDINATOR أو ADMIN، اكتب بريد الدخول وكلمة المرور، ثم احفظ.'
+          : 'To require a password: choose COORDINATOR or ADMIN, enter login email and password, then save.'}
+      </div>
+      <DialogActions
+        onDelete={employeeForm.id && employeeForm.accountType !== 'ADMIN' ? () => deleteEmployee(normalizeWpEmployee(employeeForm)) : undefined}
+        deleteLabel={isAr ? 'حذف الموظف' : 'Delete employee'}
+      />
+    </form>
+  );
+
+  const renderCoordinatorForm = () => (
+    <form className="space-y-4" onSubmit={saveCoordinator}>
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.65fr)]">
+        <Field label={isAr ? 'اسم المنسق' : 'Coordinator name'}>
+          <select className="input" value={coordinatorForm.employeeId} onChange={(e) => setCoordinatorForm((p) => ({ ...p, employeeId: e.target.value }))}>
+            <option value="">{isAr ? 'اختر موظفاً ليصبح منسقاً' : 'Choose employee to become coordinator'}</option>
+            {coordinatorEmployeeOptions.map((employee) => (
+              <option key={employee.id} value={employee.id}>{displayWpPersonName(employee, locale)} - {employee.department || '-'}</option>
+            ))}
+          </select>
+        </Field>
+        <label className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm">
+          <input type="checkbox" checked={coordinatorForm.active} onChange={(e) => setCoordinatorForm((p) => ({ ...p, active: e.target.checked }))} />
+          <span>{isAr ? 'فعال' : 'Active'}</span>
+        </label>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {tabButton('employees', 'الموظفين', 'Employees', UserRound)}
-        {tabButton('coordinators', 'المنسقين', 'Coordinators', Shield)}
-        {tabButton('projects', 'المشاريع', 'Projects', Database)}
-        {tabButton('engineers', 'المهندسين', 'Engineers', Hammer)}
-        {tabButton('positions', 'المناصب', 'Positions', Wrench)}
-        {tabButton('departments', 'الأقسام', 'Departments', Building2)}
-        {tabButton('cities', 'المدن', 'Cities', MapPin)}
-        {tabButton('sessions', 'الجلسات', 'Sessions', Monitor)}
+      <section className="rounded-2xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="font-semibold">{isAr ? 'الأقسام المسموحة' : 'Allowed departments'}</div>
+            <div className="mt-1 text-xs text-gray-500">
+              {isAr ? 'كل موظف داخل هذه الأقسام يظهر للمنسق تلقائياً.' : 'Every employee in these departments is automatically available to the coordinator.'}
+            </div>
+          </div>
+          <span className="badge border-gray-200 bg-white text-gray-700">{coordinatorForm.departmentIds.length}</span>
+        </div>
+        <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
+          {departments.map((department) => {
+            const selected = coordinatorForm.departmentIds.includes(department.name);
+            return (
+              <button
+                key={department.id}
+                type="button"
+                className={`flex items-center justify-between gap-2 rounded-2xl border p-3 text-sm ${selected ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white hover:bg-blue-50'}`}
+                onClick={() => toggleArrayValue(department.name, coordinatorForm.departmentIds, (departmentIds) => setCoordinatorForm((p) => ({ ...p, departmentIds })))}
+              >
+                <span>{department.name}</span>
+                {selected && <CheckCircle2 className="h-4 w-4" />}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {renderCoordinatorPeoplePicker({
+          title: isAr ? 'أشخاص إضافيين' : 'Extra allowed people',
+          description: isAr
+            ? 'أشخاص من خارج الأقسام المختارة يمكن لهذا المنسق تنسيقهم.'
+            : 'People outside selected departments this coordinator can manage.',
+          search: coordinatorIncludeSearch,
+          onSearch: setCoordinatorIncludeSearch,
+          selectedIds: coordinatorForm.includeEmployeeIds,
+          onChange: (includeEmployeeIds) => setCoordinatorForm((p) => ({ ...p, includeEmployeeIds })),
+          tone: 'include',
+        })}
+        {renderCoordinatorPeoplePicker({
+          title: isAr ? 'أشخاص مستثنين' : 'Excluded people',
+          description: isAr
+            ? 'أشخاص داخل الأقسام المختارة لا يستطيع هذا المنسق تنسيقهم.'
+            : 'People inside selected departments this coordinator cannot manage.',
+          search: coordinatorExcludeSearch,
+          onSearch: setCoordinatorExcludeSearch,
+          selectedIds: coordinatorForm.excludeEmployeeIds,
+          onChange: (excludeEmployeeIds) => setCoordinatorForm((p) => ({ ...p, excludeEmployeeIds })),
+          tone: 'exclude',
+        })}
+      </div>
+
+      {selectedCoordinatorOverlaps.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <div className="font-semibold mb-1">{isAr ? 'تداخل مع منسقين آخرين' : 'Overlap with other coordinators'}</div>
+          <div className="flex flex-wrap gap-2">
+            {selectedCoordinatorOverlaps.map((coordinator) => (
+              <span key={coordinator.id} className="rounded-xl border border-amber-200 bg-white px-2 py-1">
+                {employeeLabel(coordinator.employeeId)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <DialogActions
+        disabled={!coordinatorForm.employeeId}
+        onDelete={coordinatorForm.employeeId ? deleteCoordinator : undefined}
+        deleteLabel={isAr ? 'حذف المنسق' : 'Delete coordinator'}
+      />
+    </form>
+  );
+
+  const renderProjectForm = () => (
+    <form className="space-y-3" onSubmit={saveProject}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="ID"><input className="input" value={projectForm.id || ''} onChange={(e) => setProjectForm((p) => ({ ...p, id: e.target.value }))} /></Field>
+        <Field label="Code"><input className="input" value={projectForm.code || ''} onChange={(e) => setProjectForm((p) => ({ ...p, code: e.target.value }))} /></Field>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="English name"><input className="input" value={projectForm.nameEn || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameEn: e.target.value, name: e.target.value }))} /></Field>
+        <Field label="Arabic name"><input className="input" value={projectForm.nameAr || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={projectForm.active !== false} onChange={(e) => setProjectForm((p) => ({ ...p, active: e.target.checked }))} />
+        <span>{isAr ? 'فعال' : 'Active'}</span>
+      </label>
+      <DialogActions
+        onDelete={projectForm.id ? () => deleteCollectionDoc(WP_PROJECTS_COLLECTION, projectForm.id, isAr ? 'المشروع' : 'project') : undefined}
+        deleteLabel={isAr ? 'حذف المشروع' : 'Delete project'}
+      />
+    </form>
+  );
+
+  const renderEngineerForm = () => (
+    <form className="space-y-3" onSubmit={saveEngineer}>
+      <Field label="ID"><input className="input" value={engineerForm.id || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, id: e.target.value }))} /></Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="English name"><input className="input" value={engineerForm.nameEn || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, nameEn: e.target.value, name: e.target.value }))} /></Field>
+        <Field label="Arabic name"><input className="input" value={engineerForm.nameAr || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Position">
+          <select className="input" value={engineerForm.position || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, position: e.target.value }))}>
+            <option value="">Choose</option>
+            {lookupOptions(positions)}
+          </select>
+        </Field>
+        <Field label="Department">
+          <select className="input" value={engineerForm.department || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, department: e.target.value }))}>
+            <option value="">Choose</option>
+            {lookupOptions(departments)}
+          </select>
+        </Field>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={engineerForm.active !== false} onChange={(e) => setEngineerForm((p) => ({ ...p, active: e.target.checked }))} />
+        <span>{isAr ? 'فعال' : 'Active'}</span>
+      </label>
+      <DialogActions
+        onDelete={engineerForm.id ? () => deleteCollectionDoc(WP_ENGINEERS_COLLECTION, engineerForm.id, isAr ? 'المهندس' : 'engineer') : undefined}
+        deleteLabel={isAr ? 'حذف المهندس' : 'Delete engineer'}
+      />
+    </form>
+  );
+
+  const lookupCollectionForDialog = () => {
+    if (dialogTab === 'positions') return WP_POSITIONS_COLLECTION;
+    if (dialogTab === 'departments') return WP_DEPARTMENTS_COLLECTION;
+    return WP_CITIES_COLLECTION;
+  };
+
+  const lookupSuccessText = () => {
+    if (dialogTab === 'positions') return isAr ? 'تم حفظ المنصب.' : 'Position saved.';
+    if (dialogTab === 'departments') return isAr ? 'تم حفظ القسم.' : 'Department saved.';
+    return isAr ? 'تم حفظ المدينة.' : 'City saved.';
+  };
+
+  const renderLookupForm = () => (
+    <form className="space-y-3" onSubmit={(event) => saveLookup(event, lookupCollectionForDialog(), lookupSuccessText())}>
+      <Field label="ID">
+        <input className="input" value={lookupForm.id} onChange={(e) => setLookupForm((p) => ({ ...p, id: e.target.value }))} />
+      </Field>
+      <Field label={isAr ? 'الاسم' : 'Name'}>
+        <input className="input" value={lookupForm.name} onChange={(e) => setLookupForm((p) => ({ ...p, name: e.target.value }))} />
+      </Field>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={lookupForm.active !== false} onChange={(e) => setLookupForm((p) => ({ ...p, active: e.target.checked }))} />
+        <span>{isAr ? 'فعال' : 'Active'}</span>
+      </label>
+      <DialogActions
+        onDelete={lookupForm.id ? () => deleteCollectionDoc(lookupCollectionForDialog(), lookupForm.id, lookupForm.name || lookupForm.id) : undefined}
+        deleteLabel={isAr ? 'حذف' : 'Delete'}
+      />
+    </form>
+  );
+
+  function DialogActions({ disabled, onDelete, deleteLabel }: { disabled?: boolean; onDelete?: () => void; deleteLabel?: string }) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-4">
+        <div>
+          {onDelete && (
+            <button type="button" className="btn-ghost inline-flex items-center gap-2 text-red-600" onClick={onDelete}>
+              <Trash2 className="h-4 w-4" />
+              <span>{deleteLabel || (isAr ? 'حذف' : 'Delete')}</span>
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button type="button" className="btn-ghost" onClick={() => setDialogTab(null)}>{isAr ? 'إغلاق' : 'Close'}</button>
+          <button type="submit" className="btn-primary inline-flex items-center gap-2 disabled:opacity-50" disabled={busy || disabled}>
+            <Save className="h-4 w-4" />
+            <span>{isAr ? 'حفظ' : 'Save'}</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const dialogTitle = () => {
+    if (dialogTab === 'employees') return employeeForm.id ? (isAr ? 'تعديل موظف' : 'Edit employee') : (isAr ? 'إضافة موظف' : 'Add employee');
+    if (dialogTab === 'coordinators') return coordinatorForm.employeeId ? (isAr ? 'تعديل منسق' : 'Edit coordinator') : (isAr ? 'إضافة منسق' : 'Add coordinator');
+    if (dialogTab === 'projects') return projectForm.id ? (isAr ? 'تعديل مشروع' : 'Edit project') : (isAr ? 'إضافة مشروع' : 'Add project');
+    if (dialogTab === 'engineers') return engineerForm.id ? (isAr ? 'تعديل مهندس' : 'Edit engineer') : (isAr ? 'إضافة مهندس' : 'Add engineer');
+    if (dialogTab === 'positions') return lookupForm.id ? (isAr ? 'تعديل منصب' : 'Edit position') : (isAr ? 'إضافة منصب' : 'Add position');
+    if (dialogTab === 'departments') return lookupForm.id ? (isAr ? 'تعديل قسم' : 'Edit department') : (isAr ? 'إضافة قسم' : 'Add department');
+    return lookupForm.id ? (isAr ? 'تعديل مدينة' : 'Edit city') : (isAr ? 'إضافة مدينة' : 'Add city');
+  };
+
+  const renderDialogForm = () => {
+    if (dialogTab === 'employees') return renderEmployeeForm();
+    if (dialogTab === 'coordinators') return renderCoordinatorForm();
+    if (dialogTab === 'projects') return renderProjectForm();
+    if (dialogTab === 'engineers') return renderEngineerForm();
+    return renderLookupForm();
+  };
+
+  return (
+    <div className="space-y-5 text-right" dir={isAr ? 'rtl' : 'ltr'}>
+      <div className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+              <LayoutDashboard className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-xl font-semibold">{isAr ? 'لوحة إدارة خطط العمل' : 'Work Plans Admin'}</div>
+              <div className="mt-1 text-sm text-gray-500">
+                {isAr ? 'كل القوائم والصلاحيات في مكان واحد، مع بحث سريع وإضافة مباشرة.' : 'All lists and access controls in one place, with quick search and direct add.'}
+              </div>
+            </div>
+          </div>
+          {activeSection.canAdd && (
+            <button type="button" className="btn-primary inline-flex items-center gap-2" onClick={() => openNew(activeSection.key as EditableTab)}>
+              <Plus className="h-4 w-4" />
+              <span>{isAr ? 'إضافة جديد' : 'Add new'}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {message && <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">{message}</div>}
       {error && <div className="alert alert-error">{error}</div>}
 
-      {tab === 'employees' && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
-          <div className="card p-4">
-            <div className="relative">
-              <Search className={`absolute top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
-              <input className={`input ${isAr ? 'pr-9 text-right' : 'pl-9 text-left'}`} value={qText} onChange={(e) => setQText(e.target.value)} placeholder={isAr ? 'بحث' : 'Search'} />
-            </div>
-            <div className="mt-3 max-h-[620px] overflow-y-auto space-y-2">
-              {filteredEmployees.map((employee) => (
-                <div key={employee.id} className="rounded-2xl border border-gray-200 p-3 flex items-center justify-between gap-3">
-                  <button type="button" className="min-w-0 text-start" onClick={() => editEmployee(employee)}>
-                    <div className="font-semibold text-sm">{displayWpPersonName(employee, locale)}</div>
-                    <div className="text-xs text-gray-500">{employee.memberCode} - {employee.position || '-'} - {employee.department || '-'} - {employee.city || '-'}</div>
-                    <div className="mt-1">
-                      <span className="badge border-blue-200 bg-blue-50 text-blue-700">{employee.accountType || 'VIEWER'}</span>
-                    </div>
-                  </button>
-                  {employee.accountType !== 'ADMIN' && (
-                    <button type="button" className="btn-ghost text-red-600" onClick={() => deleteEmployee(employee)} aria-label="Delete">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {sections.map(({ key, labelAr, labelEn, helperAr, helperEn, count, Icon }) => {
+          const active = tab === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              className={`rounded-2xl border p-4 text-start shadow-sm transition ${active ? 'border-blue-300 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50'}`}
+              onClick={() => {
+                setTab(key);
+                resetMessages();
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${active ? 'bg-white text-blue-700' : 'bg-gray-50 text-gray-600'}`}>
+                  <Icon className="h-5 w-5" />
                 </div>
-              ))}
-            </div>
+                <div className="text-2xl font-semibold">{count}</div>
+              </div>
+              <div className="mt-3 font-semibold">{isAr ? labelAr : labelEn}</div>
+              <div className="mt-1 text-xs text-gray-500">{isAr ? helperAr : helperEn}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold">{isAr ? activeSection.labelAr : activeSection.labelEn}</div>
+            <div className="mt-1 text-sm text-gray-500">{isAr ? activeSection.helperAr : activeSection.helperEn}</div>
           </div>
-
-          <form className="card p-4 space-y-3" onSubmit={saveEmployee}>
-            <div className="font-semibold">{isAr ? 'تفاصيل الموظف' : 'Employee details'}</div>
-            <Field label="ID"><input className="input" value={employeeForm.id} onChange={(e) => setEmployeeForm((p) => ({ ...p, id: e.target.value }))} /></Field>
-            <Field label={isAr ? 'كود الموظف' : 'Member code'}><input className="input" value={employeeForm.memberCode} onChange={(e) => setEmployeeForm((p) => ({ ...p, memberCode: e.target.value }))} /></Field>
-            <Field label={isAr ? 'الاسم الكامل' : 'Full name'}><input className="input" value={employeeForm.fullName} onChange={(e) => setEmployeeForm((p) => ({ ...p, fullName: e.target.value }))} /></Field>
-            <Field label={isAr ? 'الاسم العربي' : 'Arabic name'}><input className="input" value={employeeForm.nameAr} onChange={(e) => setEmployeeForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
-            <Field label={isAr ? 'الاسم الإنجليزي' : 'English name'}><input className="input" value={employeeForm.nameEn} onChange={(e) => setEmployeeForm((p) => ({ ...p, nameEn: e.target.value }))} /></Field>
-            <Field label={isAr ? 'المنصب' : 'Position'}>
-              <select className="input" value={employeeForm.position} onChange={(e) => setEmployeeForm((p) => ({ ...p, position: e.target.value }))}>
-                <option value="">{isAr ? 'اختر المنصب' : 'Choose position'}</option>
-                {lookupOptions(positions)}
-              </select>
-            </Field>
-            <Field label={isAr ? 'القسم' : 'Department'}>
-              <select className="input" value={employeeForm.department} onChange={(e) => setEmployeeForm((p) => ({ ...p, department: e.target.value }))}>
-                <option value="">{isAr ? 'اختر القسم' : 'Choose department'}</option>
-                {lookupOptions(departments)}
-              </select>
-            </Field>
-            <Field label={isAr ? 'المدينة' : 'City'}>
-              <select className="input" value={employeeForm.city} onChange={(e) => setEmployeeForm((p) => ({ ...p, city: e.target.value }))}>
-                <option value="">{isAr ? 'اختر المدينة' : 'Choose city'}</option>
-                {lookupOptions(cities)}
-              </select>
-            </Field>
-            <Field label={isAr ? 'نوع الحساب' : 'Account type'}>
-              <select className="input" value={employeeForm.accountType} onChange={(e) => setEmployeeForm((p) => ({ ...p, accountType: e.target.value as WpAccountType }))}>
-                <option value="VIEWER">VIEWER</option>
-                <option value="COORDINATOR">COORDINATOR</option>
-                <option value="ADMIN">ADMIN</option>
-              </select>
-            </Field>
-            <Field label={isAr ? 'بريد تسجيل الدخول' : 'Login email'}><input className="input" value={employeeForm.authEmail} onChange={(e) => setEmployeeForm((p) => ({ ...p, authEmail: e.target.value }))} /></Field>
-            <Field label={isAr ? 'كلمة مرور جديدة' : 'New password'}><input className="input" type="password" value={employeeForm.password} onChange={(e) => setEmployeeForm((p) => ({ ...p, password: e.target.value }))} /></Field>
-            <Field label="Firebase Auth UID"><input className="input bg-gray-50" value={employeeForm.authUid} onChange={(e) => setEmployeeForm((p) => ({ ...p, authUid: e.target.value }))} /></Field>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={employeeForm.active} onChange={(e) => setEmployeeForm((p) => ({ ...p, active: e.target.checked }))} />
-              <span>{isAr ? 'فعال' : 'Active'}</span>
-            </label>
-            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
-              {isAr
-                ? 'لجعل الموظف يطلب كلمة مرور عند الدخول: اختر COORDINATOR أو ADMIN، اكتب بريد الدخول وكلمة المرور، ثم احفظ.'
-                : 'To require a password: choose COORDINATOR or ADMIN, enter login email and password, then save.'}
-            </div>
-            <div className="flex gap-2">
-              <button type="submit" className="btn-primary inline-flex items-center gap-2 disabled:opacity-50" disabled={busy}>
-                <Save className="h-4 w-4" />
-                <span>{isAr ? 'حفظ' : 'Save'}</span>
-              </button>
-              <button type="button" className="btn-ghost" onClick={() => setEmployeeForm(emptyEmployeeForm)}>{isAr ? 'جديد' : 'New'}</button>
-            </div>
-          </form>
+          {activeSection.canAdd && (
+            <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => openNew(activeSection.key as EditableTab)}>
+              <Plus className="h-4 w-4" />
+              <span>{isAr ? 'إضافة جديد' : 'Add new'}</span>
+            </button>
+          )}
         </div>
-      )}
 
-      {tab === 'coordinators' && (
-        <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
-          <div className="card p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
+            <input
+              className={`input ${isAr ? 'pr-9 text-right' : 'pl-9 text-left'}`}
+              value={currentSearch}
+              onChange={(event) => setCurrentSearch(event.target.value)}
+              placeholder={isAr ? 'بحث وفلترة داخل هذا القسم' : 'Search and filter this section'}
+            />
+          </div>
+          {currentSearch && (
+            <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => setCurrentSearch('')}>
+              <X className="h-4 w-4" />
+              <span>{isAr ? 'مسح' : 'Clear'}</span>
+            </button>
+          )}
+        </div>
+
+        <div className="mt-4 max-h-[68vh] overflow-y-auto rounded-2xl bg-gray-50/60 p-3">
+          {renderList()}
+        </div>
+      </section>
+
+      {dialogTab && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+          <div className="max-h-[92vh] w-full overflow-hidden rounded-t-3xl border border-gray-200 bg-white shadow-xl sm:max-w-5xl sm:rounded-3xl">
+            <div className="flex items-center justify-between gap-3 border-b border-gray-100 p-4">
               <div>
-                <div className="font-semibold">{isAr ? 'المنسقين' : 'Coordinators'}</div>
+                <div className="text-lg font-semibold">{dialogTitle()}</div>
                 <div className="mt-1 text-xs text-gray-500">
-                  {isAr ? 'اختر منسقاً للتعديل أو أنشئ منسقاً جديداً.' : 'Choose a coordinator to edit or create a new one.'}
+                  {isAr ? 'عدّل البيانات ثم اضغط حفظ، أو استخدم الحذف من أسفل النافذة.' : 'Edit the details, save, or use delete at the bottom.'}
                 </div>
               </div>
-              <button
-                type="button"
-                className="btn-ghost inline-flex items-center gap-2"
-                onClick={() => {
-                  setCoordinatorForm(emptyCoordinatorForm);
-                  setCoordinatorIncludeSearch('');
-                  setCoordinatorExcludeSearch('');
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                <span>{isAr ? 'جديد' : 'New'}</span>
+              <button type="button" className="btn-ghost inline-flex items-center justify-center" onClick={() => setDialogTab(null)} aria-label={isAr ? 'إغلاق' : 'Close'}>
+                <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="max-h-[620px] overflow-y-auto space-y-2">
-              {coordinators.map((coordinator) => (
-                <button key={coordinator.id} type="button" className="w-full rounded-2xl border border-gray-200 p-3 text-start hover:bg-blue-50" onClick={() => editCoordinator(coordinator)}>
-                  <div className="font-semibold">{employeeLabel(coordinator.employeeId)}</div>
-                  <div className="text-xs text-gray-500">{(coordinator.departmentIds || []).join(' - ') || '-'}</div>
-                  <div className="mt-2 flex flex-wrap gap-1 text-xs">
-                    <span className="badge border-emerald-200 bg-emerald-50 text-emerald-700">
-                      {isAr ? 'إضافي' : 'Extra'} {(coordinator.includeEmployeeIds || []).length}
-                    </span>
-                    <span className="badge border-rose-200 bg-rose-50 text-rose-700">
-                      {isAr ? 'مستثنى' : 'Excluded'} {(coordinator.excludeEmployeeIds || []).length}
-                    </span>
-                  </div>
-                </button>
-              ))}
-              {!coordinators.length && (
-                <div className="rounded-2xl border border-dashed border-gray-200 p-4 text-sm text-gray-500">
-                  {isAr ? 'لا يوجد منسقين بعد.' : 'No coordinators yet.'}
-                </div>
-              )}
+            <div className="max-h-[calc(92vh-86px)] overflow-y-auto p-4">
+              {renderDialogForm()}
             </div>
-          </div>
-          <form className="card p-4 space-y-4" onSubmit={saveCoordinator}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-lg font-semibold">{isAr ? 'صلاحيات المنسق' : 'Coordinator access'}</div>
-                <div className="mt-1 text-sm text-gray-500">
-                  {isAr ? 'الأقسام تحدد الفريق الأساسي، والإضافات والاستثناءات تعدل القائمة بدقة.' : 'Departments define the base team; extra and excluded people fine tune access.'}
-                </div>
-              </div>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm">
-                <input type="checkbox" checked={coordinatorForm.active} onChange={(e) => setCoordinatorForm((p) => ({ ...p, active: e.target.checked }))} />
-                <span>{isAr ? 'فعال' : 'Active'}</span>
-              </label>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.65fr)]">
-              <Field label={isAr ? 'اسم المنسق' : 'Coordinator name'}>
-                <select className="input" value={coordinatorForm.employeeId} onChange={(e) => setCoordinatorForm((p) => ({ ...p, employeeId: e.target.value }))}>
-                  <option value="">{isAr ? 'اختر موظفاً ليصبح منسقاً' : 'Choose employee to become coordinator'}</option>
-                  {coordinatorEmployeeOptions.map((employee) => (
-                    <option key={employee.id} value={employee.id}>{displayWpPersonName(employee, locale)} - {employee.department || '-'}</option>
-                  ))}
-                </select>
-              </Field>
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-800">
-                {isAr
-                  ? 'عند الحفظ يتحول نوع حساب الموظف إلى COORDINATOR، ويستطيع إنشاء خطط عمل حسب هذه الصلاحيات.'
-                  : 'Saving changes the employee account type to COORDINATOR and allows plan creation based on this access.'}
-              </div>
-            </div>
-
-            <section className="rounded-2xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="font-semibold">{isAr ? 'الأقسام المسموحة' : 'Allowed departments'}</div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    {isAr ? 'كل موظف داخل هذه الأقسام يظهر للمنسق تلقائياً.' : 'Every employee in these departments is automatically available to the coordinator.'}
-                  </div>
-                </div>
-                <span className="badge border-gray-200 bg-white text-gray-700">{coordinatorForm.departmentIds.length}</span>
-              </div>
-              <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
-                {departments.map((department) => {
-                  const selected = coordinatorForm.departmentIds.includes(department.name);
-                  return (
-                    <button
-                      key={department.id}
-                      type="button"
-                      className={`flex items-center justify-between gap-2 rounded-2xl border p-3 text-sm ${selected ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white hover:bg-blue-50'}`}
-                      onClick={() => toggleArrayValue(department.name, coordinatorForm.departmentIds, (departmentIds) => setCoordinatorForm((p) => ({ ...p, departmentIds })))}
-                    >
-                      <span>{department.name}</span>
-                      {selected && <CheckCircle2 className="h-4 w-4" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-
-            <div className="grid gap-4 xl:grid-cols-2">
-              {renderCoordinatorPeoplePicker({
-                title: isAr ? 'أشخاص إضافيين' : 'Extra allowed people',
-                description: isAr
-                  ? 'استخدمها لإضافة أشخاص من خارج الأقسام المختارة إلى صلاحية هذا المنسق.'
-                  : 'Use this to add people outside the selected departments to this coordinator.',
-                search: coordinatorIncludeSearch,
-                onSearch: setCoordinatorIncludeSearch,
-                selectedIds: coordinatorForm.includeEmployeeIds,
-                onChange: (includeEmployeeIds) => setCoordinatorForm((p) => ({ ...p, includeEmployeeIds })),
-                tone: 'include',
-              })}
-              {renderCoordinatorPeoplePicker({
-                title: isAr ? 'أشخاص مستثنين' : 'Excluded people',
-                description: isAr
-                  ? 'استخدمها لإخفاء أشخاص من الأقسام المختارة حتى لا يستطيع هذا المنسق تنسيقهم.'
-                  : 'Use this to hide people from selected departments from this coordinator.',
-                search: coordinatorExcludeSearch,
-                onSearch: setCoordinatorExcludeSearch,
-                selectedIds: coordinatorForm.excludeEmployeeIds,
-                onChange: (excludeEmployeeIds) => setCoordinatorForm((p) => ({ ...p, excludeEmployeeIds })),
-                tone: 'exclude',
-              })}
-            </div>
-
-            {selectedCoordinatorOverlaps.length > 0 && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                <div className="font-semibold mb-1">{isAr ? 'تداخل مع منسقين آخرين' : 'Overlap with other coordinators'}</div>
-                <div className="flex flex-wrap gap-2">
-                  {selectedCoordinatorOverlaps.map((coordinator) => (
-                    <span key={coordinator.id} className="rounded-xl border border-amber-200 bg-white px-2 py-1">
-                      {employeeLabel(coordinator.employeeId)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <button type="submit" className="btn-primary inline-flex items-center gap-2 disabled:opacity-50" disabled={busy || !coordinatorForm.employeeId}>
-                <Save className="h-4 w-4" />
-                <span>{isAr ? 'حفظ المنسق' : 'Save coordinator'}</span>
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => {
-                  setCoordinatorForm(emptyCoordinatorForm);
-                  setCoordinatorIncludeSearch('');
-                  setCoordinatorExcludeSearch('');
-                }}
-              >
-                {isAr ? 'تفريغ' : 'Clear'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {tab === 'projects' && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="card p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <div className="font-semibold">{isAr ? 'المشاريع' : 'Projects'}</div>
-                <div className="mt-1 text-xs text-gray-500">{isAr ? 'يمكنك إضافة مشروع جديد أو تعديل مشروع موجود.' : 'Add a new project or edit an existing one.'}</div>
-              </div>
-              <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => setProjectForm(emptyProject)}>
-                <Plus className="h-4 w-4" />
-                <span>{isAr ? 'جديد' : 'New'}</span>
-              </button>
-            </div>
-            <div className="max-h-[620px] overflow-y-auto space-y-2">
-              {projects.map((project) => (
-                <button key={project.id} type="button" className="w-full rounded-2xl border border-gray-200 p-3 text-start hover:bg-blue-50" onClick={() => setProjectForm(project)}>
-                  <div className="font-semibold">{project.nameEn || project.name || project.code || project.id}</div>
-                  <div className="text-xs text-gray-500">{project.code || project.id}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-          <form className="card p-4 space-y-3" onSubmit={saveProject}>
-            <div className="font-semibold">{isAr ? 'تفاصيل المشروع' : 'Project details'}</div>
-            <Field label="ID"><input className="input" value={projectForm.id || ''} onChange={(e) => setProjectForm((p) => ({ ...p, id: e.target.value }))} /></Field>
-            <Field label="Code"><input className="input" value={projectForm.code || ''} onChange={(e) => setProjectForm((p) => ({ ...p, code: e.target.value }))} /></Field>
-            <Field label="English name"><input className="input" value={projectForm.nameEn || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameEn: e.target.value }))} /></Field>
-            <Field label="Arabic name"><input className="input" value={projectForm.nameAr || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={projectForm.active !== false} onChange={(e) => setProjectForm((p) => ({ ...p, active: e.target.checked }))} />
-              <span>{isAr ? 'فعال' : 'Active'}</span>
-            </label>
-            <div className="flex gap-2">
-              <button className="btn-primary" type="submit">{isAr ? 'حفظ' : 'Save'}</button>
-              <button type="button" className="btn-ghost" onClick={() => setProjectForm(emptyProject)}>{isAr ? 'جديد' : 'New'}</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {tab === 'engineers' && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="card p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <div className="font-semibold">{isAr ? 'المهندسين' : 'Engineers'}</div>
-                <div className="mt-1 text-xs text-gray-500">{isAr ? 'يمكنك إضافة مهندس جديد أو تعديل مهندس موجود.' : 'Add a new engineer or edit an existing one.'}</div>
-              </div>
-              <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => setEngineerForm(emptyEngineer)}>
-                <Plus className="h-4 w-4" />
-                <span>{isAr ? 'جديد' : 'New'}</span>
-              </button>
-            </div>
-            <div className="max-h-[620px] overflow-y-auto space-y-2">
-              {engineers.map((engineer) => (
-                <button key={engineer.id} type="button" className="w-full rounded-2xl border border-gray-200 p-3 text-start hover:bg-blue-50" onClick={() => setEngineerForm(engineer)}>
-                  <div className="font-semibold">{engineer.nameAr || engineer.nameEn || engineer.name || engineer.id}</div>
-                  <div className="text-xs text-gray-500">{engineer.position || '-'} - {engineer.department || '-'}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-          <form className="card p-4 space-y-3" onSubmit={saveEngineer}>
-            <div className="font-semibold">{isAr ? 'تفاصيل المهندس' : 'Engineer details'}</div>
-            <Field label="ID"><input className="input" value={engineerForm.id || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, id: e.target.value }))} /></Field>
-            <Field label="English name"><input className="input" value={engineerForm.nameEn || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, nameEn: e.target.value, name: e.target.value }))} /></Field>
-            <Field label="Arabic name"><input className="input" value={engineerForm.nameAr || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
-            <Field label="Position"><select className="input" value={engineerForm.position || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, position: e.target.value }))}><option value="">Choose</option>{lookupOptions(positions)}</select></Field>
-            <Field label="Department"><select className="input" value={engineerForm.department || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, department: e.target.value }))}><option value="">Choose</option>{lookupOptions(departments)}</select></Field>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={engineerForm.active !== false} onChange={(e) => setEngineerForm((p) => ({ ...p, active: e.target.checked }))} />
-              <span>{isAr ? 'فعال' : 'Active'}</span>
-            </label>
-            <div className="flex gap-2">
-              <button className="btn-primary" type="submit">{isAr ? 'حفظ' : 'Save'}</button>
-              <button type="button" className="btn-ghost" onClick={() => setEngineerForm(emptyEngineer)}>{isAr ? 'جديد' : 'New'}</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {tab === 'positions' && renderLookupTab(positions, WP_POSITIONS_COLLECTION, 'المناصب', 'Positions')}
-      {tab === 'departments' && renderLookupTab(departments, WP_DEPARTMENTS_COLLECTION, 'الأقسام', 'Departments')}
-      {tab === 'cities' && renderLookupTab(cities, WP_CITIES_COLLECTION, 'المدن', 'Cities')}
-
-      {tab === 'sessions' && (
-        <div className="card p-4 space-y-2">
-          <div className="font-semibold mb-3">{isAr ? 'الجلسات' : 'Sessions'}</div>
-          <div className="max-h-[620px] overflow-y-auto space-y-2">
-            {sessions.map((session) => (
-              <div key={session.id} className="rounded-2xl border border-gray-200 p-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-semibold">{session.employeeName}</div>
-                  <div className="text-xs text-gray-500 truncate">{session.id} - {session.accountType} - {session.active ? 'active' : 'closed'}</div>
-                </div>
-                {session.active && (
-                  <button type="button" className="btn-ghost text-red-600" onClick={() => revokeSession(session)}>
-                    {isAr ? 'إخراج' : 'Revoke'}
-                  </button>
-                )}
-              </div>
-            ))}
           </div>
         </div>
       )}
