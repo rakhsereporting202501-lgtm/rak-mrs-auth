@@ -4,8 +4,8 @@ import { collection, deleteDoc, doc, limit, onSnapshot, query, where } from 'fir
 import { ClipboardList, Copy, Plus, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { getWpDb } from '../lib/wpFirebase';
 import { useWpAuth } from '../context/WpAuthContext';
-import type { WpPlanDoc } from '../lib/wpTypes';
-import { timestampMs, WP_WORK_PLANS_COLLECTION } from '../lib/wpTypes';
+import type { WpCoordinatorDoc, WpPlanDoc } from '../lib/wpTypes';
+import { timestampMs, WP_COORDINATORS_COLLECTION, WP_WORK_PLANS_COLLECTION } from '../lib/wpTypes';
 
 function countEmployees(plan: WpPlanDoc) {
   return (plan.groups || []).reduce((sum, group) => sum + (group.employeeIds || []).length, 0);
@@ -54,6 +54,7 @@ export default function WpPlans() {
   const { wpUser, isAdmin, canManagePlans } = useWpAuth();
   const nav = useNavigate();
   const [plans, setPlans] = useState<WpPlanDoc[]>([]);
+  const [coordinators, setCoordinators] = useState<WpCoordinatorDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -113,9 +114,28 @@ export default function WpPlans() {
     return () => unsub();
   }, [wpUser?.id, isAdmin, canManagePlans]);
 
+  useEffect(() => {
+    if (!wpUser?.id || isAdmin || canManagePlans) return;
+    const unsub = onSnapshot(collection(getWpDb(), WP_COORDINATORS_COLLECTION), (snap) => {
+      setCoordinators(snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) } as WpCoordinatorDoc)));
+    });
+    return () => unsub();
+  }, [wpUser?.id, isAdmin, canManagePlans]);
+
   const filteredPlans = useMemo(() => {
     const tokens = qText.toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean);
-    const out = plans.filter((plan) => {
+    const visiblePlans = plans.filter((plan) => {
+      if (isAdmin || canManagePlans) return true;
+      if (plan.status !== 'SUBMITTED') return false;
+      const inPlan = (plan.groups || []).some((group) => (group.employeeIds || []).includes(wpUser?.id || ''));
+      if (inPlan) return true;
+      const owner = coordinators.find((coordinator) => coordinator.employeeId === plan.createdByUid);
+      if (!owner || owner.active === false) return false;
+      if ((owner.excludeEmployeeIds || []).includes(wpUser?.id || '')) return false;
+      return (owner.includeEmployeeIds || []).includes(wpUser?.id || '')
+        || (owner.departmentIds || []).includes(wpUser?.department || '');
+    });
+    const out = visiblePlans.filter((plan) => {
       if (statusFilter !== 'ALL' && plan.status !== statusFilter) return false;
       if (dateFilter && plan.workDate !== dateFilter) return false;
       if (!tokens.length) return true;
@@ -131,7 +151,7 @@ export default function WpPlans() {
       return (timestampMs(a.updatedAt || a.createdAt) - timestampMs(b.updatedAt || b.createdAt)) * dir;
     });
     return out;
-  }, [plans, qText, statusFilter, dateFilter, sortKey, sortDir]);
+  }, [plans, qText, statusFilter, dateFilter, sortKey, sortDir, isAdmin, canManagePlans, wpUser?.id, wpUser?.department, coordinators]);
 
   const hasFilters = !!qText || statusFilter !== 'ALL' || !!dateFilter || sortKey !== 'updatedAt' || sortDir !== 'desc';
 

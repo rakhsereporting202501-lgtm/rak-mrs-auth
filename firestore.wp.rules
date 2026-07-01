@@ -26,6 +26,26 @@ service cloud.firestore {
       allow create, update, delete: if passwordUser();
     }
 
+    match /wpPositions/{positionId} {
+      allow read: if signedIn();
+      allow create, update, delete: if passwordUser();
+    }
+
+    match /wpDepartments/{departmentId} {
+      allow read: if signedIn();
+      allow create, update, delete: if passwordUser();
+    }
+
+    match /wpCities/{cityId} {
+      allow read: if signedIn();
+      allow create, update, delete: if passwordUser();
+    }
+
+    match /wpCoordinators/{coordinatorId} {
+      allow read: if signedIn();
+      allow create, update, delete: if passwordUser();
+    }
+
     match /wpSessions/{sessionId} {
       allow read, create, update: if signedIn();
       allow delete: if passwordUser();

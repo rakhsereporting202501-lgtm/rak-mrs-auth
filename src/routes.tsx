@@ -21,6 +21,7 @@ import WpPlanEditor from './pages/WpPlanEditor';
 import WpLogin from './pages/WpLogin';
 import WpAdmin from './pages/WpAdmin';
 import WpProfile from './pages/WpProfile';
+import WpCoordinator from './pages/WpCoordinator';
 import { useAuth } from './context/AuthContext';
 import { useWpAuth } from './context/WpAuthContext';
 import AppShell from './components/AppShell';
@@ -66,6 +67,7 @@ export const router = createBrowserRouter([
   { path: '/wp', element: <WpProtected><WpPlans /></WpProtected> },
   { path: '/wp/new', element: <WpProtected><WpPlanEditor /></WpProtected> },
   { path: '/wp/admin', element: <WpProtected><WpAdmin /></WpProtected> },
+  { path: '/wp/coordinator', element: <WpProtected><WpCoordinator /></WpProtected> },
   { path: '/wp/profile', element: <WpProtected><WpProfile /></WpProtected> },
   { path: '/wp/:id', element: <WpProtected><WpPlanEditor /></WpProtected> },
   { path: '/login', element: <Login /> },

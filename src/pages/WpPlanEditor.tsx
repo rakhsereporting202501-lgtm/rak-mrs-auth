@@ -18,12 +18,14 @@ import {
   makeWpGroup,
   tomorrowYmd,
   WP_COUNTERS_COLLECTION,
+  WP_COORDINATORS_COLLECTION,
   WP_EMPLOYEES_COLLECTION,
   WP_ENGINEERS_COLLECTION,
   WP_EMPLOYEE_SEED,
   WP_PROJECTS_COLLECTION,
   WP_WORK_PLANS_COLLECTION,
   type WpAssignmentGroup,
+  type WpCoordinatorDoc,
   type WpEmployee,
   type WpPlanDoc,
   type WpPlanStatus,
@@ -207,7 +209,7 @@ function planSignature(status: WpPlanStatus, workDate: string, groups: WpAssignm
 }
 
 export default function WpPlanEditor() {
-  const { wpUser, canManagePlans } = useWpAuth();
+  const { wpUser, isAdmin, canManagePlans } = useWpAuth();
   const nav = useNavigate();
   const location = useLocation();
   const { id } = useParams();
@@ -233,6 +235,7 @@ export default function WpPlanEditor() {
   const [employees, setEmployees] = useState<WpEmployee[]>(WP_EMPLOYEE_SEED);
   const [projects, setProjects] = useState<Project[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [coordinatorAccess, setCoordinatorAccess] = useState<WpCoordinatorDoc | null>(null);
   const [planOwner, setPlanOwner] = useState<{ createdByUid?: string; createdBy?: WpPlanDoc['createdBy'] } | null>(null);
   const [pickerModeByGroup, setPickerModeByGroup] = useState<Record<string, PickerMode>>({});
   const [pickerSearch, setPickerSearch] = useState<Record<string, string>>({});
@@ -296,6 +299,22 @@ export default function WpPlanEditor() {
     loadLookups();
     return () => { active = false; };
   }, [db]);
+
+  useEffect(() => {
+    if (!wpUser?.id || isAdmin) {
+      setCoordinatorAccess(null);
+      return;
+    }
+    const load = async () => {
+      try {
+        const snap = await getDoc(doc(db, WP_COORDINATORS_COLLECTION, wpUser.id));
+        setCoordinatorAccess(snap.exists() ? ({ id: snap.id, ...(snap.data() as any) } as WpCoordinatorDoc) : null);
+      } catch {
+        setCoordinatorAccess(null);
+      }
+    };
+    load();
+  }, [db, wpUser?.id, isAdmin]);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, WP_EMPLOYEES_COLLECTION), (snap) => {
@@ -375,6 +394,19 @@ export default function WpPlanEditor() {
     return map;
   }, [employees]);
 
+  const assignableEmployees = useMemo(() => {
+    if (isAdmin) return employees;
+    const access = coordinatorAccess;
+    if (!access || access.active === false) return [];
+    const allowedDepartments = new Set(access.departmentIds || []);
+    const included = new Set(access.includeEmployeeIds || []);
+    const excluded = new Set(access.excludeEmployeeIds || []);
+    return employees.filter((employee) => {
+      if (excluded.has(employee.id)) return false;
+      return included.has(employee.id) || allowedDepartments.has(employee.department || '');
+    });
+  }, [employees, coordinatorAccess, isAdmin]);
+
   const displayCoordinatorName = useMemo(() => {
     if (isEdit && !copyId) {
       return coordinatorNameEn
@@ -412,8 +444,8 @@ export default function WpPlanEditor() {
   }, [engineers, employees]);
 
   const employeeDepartments = useMemo(() => (
-    Array.from(new Set(employees.map((employee) => employee.department || '').filter(Boolean))).sort((a, b) => displayDepartment(a).localeCompare(displayDepartment(b)))
-  ), [employees]);
+    Array.from(new Set(assignableEmployees.map((employee) => employee.department || '').filter(Boolean))).sort((a, b) => displayDepartment(a).localeCompare(displayDepartment(b)))
+  ), [assignableEmployees]);
 
   const engineerDepartments = useMemo(() => (
     Array.from(new Set(engineerCandidates.map((engineer) => engineer.department || '').filter(Boolean))).sort((a, b) => displayDepartment(a).localeCompare(displayDepartment(b)))
@@ -536,7 +568,7 @@ export default function WpPlanEditor() {
     const selected = personType === 'engineer'
       ? new Set(getSelectedEngineers(group).map((engineer) => engineer.id))
       : new Set(group.employeeIds);
-    const source = personType === 'engineer' ? engineerCandidates : employees.map(snapshotPerson);
+    const source = personType === 'engineer' ? engineerCandidates : assignableEmployees.map(snapshotPerson);
     const filtered = source
       .filter((person) => !selected.has(person.id))
       .filter((person) => !deptFilters.length || deptFilters.includes(person.department || ''))

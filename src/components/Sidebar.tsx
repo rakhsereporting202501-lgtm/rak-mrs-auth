@@ -10,7 +10,7 @@ import { confirmWpUnsavedChanges, setWpUnsavedChangesFlag } from '../lib/wpUnsav
 
 export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boolean; onClose: () => void; collapsedDesktop?: boolean; }) {
   const { role } = useAuth();
-  const { isAdmin: isWpAdmin, logout: wpLogout } = useWpAuth();
+  const { isAdmin: isWpAdmin, canManagePlans: canWpManagePlans, logout: wpLogout } = useWpAuth();
   const loc = useLocation();
   const logoSrc = `${import.meta.env.BASE_URL}logo.svg`;
   const isWpApp = loc.pathname.startsWith('/wp');
@@ -63,7 +63,8 @@ export default function Sidebar({ open, onClose, collapsedDesktop }: { open: boo
           {isWpApp ? (
             <>
               <Item to="/wp" icon={ClipboardList} label={'خطط العمل'} />
-              <Item to="/wp/new" icon={Plus} label={'خطة جديدة'} />
+              {canWpManagePlans && <Item to="/wp/new" icon={Plus} label={'خطة جديدة'} />}
+              {canWpManagePlans && <Item to="/wp/coordinator" icon={Shield} label={'المنسق'} />}
               {isWpAdmin && <Item to="/wp/admin" icon={Shield} label={'Admin'} />}
             </>
           ) : (

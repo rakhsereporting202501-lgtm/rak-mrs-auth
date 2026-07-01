@@ -16,6 +16,8 @@ const wpFirebaseConfig = {
   measurementId: 'G-RZ99D5SP8Z',
 };
 
+export const WP_FIREBASE_API_KEY = wpFirebaseConfig.apiKey;
+
 export function initWpFirebase(): { app: FirebaseApp } {
   const app = getApps().some((entry) => entry.name === WP_APP_NAME)
     ? getApp(WP_APP_NAME)

@@ -16,6 +16,7 @@ const labels = {
     passwordHint: 'هذا الحساب يحتاج كلمة مرور.',
     continue: 'تسجيل دخول',
     search: 'اكتب الاسم أو الكود',
+    adminEmail: 'يمكن للأدمن كتابة البريد الإلكتروني هنا.',
     noResults: 'لا توجد نتائج.',
     language: 'English',
     loading: 'جاري التحميل...',
@@ -29,6 +30,7 @@ const labels = {
     passwordHint: 'This account requires a password.',
     continue: 'Sign in',
     search: 'Type name or code',
+    adminEmail: 'Admins can type their email here.',
     noResults: 'No results.',
     language: 'العربية',
     loading: 'Loading...',
@@ -38,6 +40,10 @@ const labels = {
 
 function seedEmployees() {
   return WP_EMPLOYEE_SEED.map((employee) => normalizeWpEmployee({ ...employee, accountType: 'VIEWER', active: true }));
+}
+
+function isEmail(value: string) {
+  return /.+@.+\..+/.test(value.trim());
 }
 
 export default function WpLogin() {
@@ -82,6 +88,7 @@ export default function WpLogin() {
     const tokens = queryText.toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean);
     return employees
       .filter((employee) => employee.active !== false)
+      .filter((employee) => employee.accountType !== 'ADMIN')
       .filter((employee) => {
         if (!tokens.length) return true;
         const hay = wpEmployeeSearchText(employee);
@@ -90,6 +97,23 @@ export default function WpLogin() {
       .sort((a, b) => displayWpPersonName(a, locale).localeCompare(displayWpPersonName(b, locale)))
       .slice(0, 60);
   }, [employees, queryText, locale]);
+
+  const adminByEmail = useMemo(() => {
+    const email = queryText.trim().toLowerCase();
+    if (!isEmail(email)) return null;
+    return employees.find((employee) => (
+      employee.active !== false
+      && employee.accountType === 'ADMIN'
+      && (employee.authEmail || '').toLowerCase() === email
+    )) || null;
+  }, [employees, queryText]);
+
+  useEffect(() => {
+    if (adminByEmail) {
+      setSelected(adminByEmail);
+      setRequiresPassword(true);
+    }
+  }, [adminByEmail]);
 
   const selectEmployee = (employee: WpEmployee) => {
     setSelected(employee);
@@ -102,10 +126,11 @@ export default function WpLogin() {
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
-    if (!selected) return;
+    const loginTarget = adminByEmail || selected;
+    if (!loginTarget) return;
     setBusy(true);
     try {
-      const result = await login(selected, password);
+      const result = await login(loginTarget, password);
       if (result.requiresPassword) {
         setRequiresPassword(true);
         return;
@@ -173,6 +198,7 @@ export default function WpLogin() {
                 </button>
               )}
             </div>
+            {isEmail(queryText) && <div className="text-[11px] text-gray-400 mt-1">{t.adminEmail}</div>}
             <div className="mt-2 max-h-72 overflow-y-auto rounded-2xl border border-blue-100 bg-blue-50/70">
               {loading && <div className="p-3 text-sm text-gray-500">{t.loading}</div>}
               {!loading && results.map((employee) => {
@@ -208,7 +234,7 @@ export default function WpLogin() {
           )}
 
           {error && <div className="alert alert-error">{error}</div>}
-          <button type="submit" className="btn-primary w-full inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={!selected || busy}>
+          <button type="submit" className="btn-primary w-full inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={!(selected || adminByEmail) || busy}>
             <LogIn className="h-4 w-4" />
             <span>{busy ? t.loading : t.continue}</span>
           </button>

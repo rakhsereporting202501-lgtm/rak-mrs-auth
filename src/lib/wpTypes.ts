@@ -11,6 +11,7 @@ export type WpEmployee = {
   nameEn?: string;
   position?: string;
   department?: string;
+  city?: string;
   accountType?: WpAccountType;
   active?: boolean;
   authEmail?: string;
@@ -40,6 +41,26 @@ export type WpEngineer = {
   position?: string;
   department?: string;
   active?: boolean;
+};
+
+export type WpLookupDoc = {
+  id: string;
+  name: string;
+  active?: boolean;
+  createdAt?: any;
+  updatedAt?: any;
+};
+
+export type WpCoordinatorDoc = {
+  id: string;
+  employeeId: string;
+  employeeName?: string;
+  active?: boolean;
+  departmentIds: string[];
+  includeEmployeeIds: string[];
+  excludeEmployeeIds: string[];
+  createdAt?: any;
+  updatedAt?: any;
 };
 
 export type WpSessionDoc = {
@@ -92,6 +113,10 @@ export const WP_COUNTERS_COLLECTION = 'rakWp_counters';
 export const WP_EMPLOYEES_COLLECTION = 'wpEmployees';
 export const WP_PROJECTS_COLLECTION = 'wpProjects';
 export const WP_ENGINEERS_COLLECTION = 'wpEngineers';
+export const WP_POSITIONS_COLLECTION = 'wpPositions';
+export const WP_DEPARTMENTS_COLLECTION = 'wpDepartments';
+export const WP_CITIES_COLLECTION = 'wpCities';
+export const WP_COORDINATORS_COLLECTION = 'wpCoordinators';
 export const WP_SESSIONS_COLLECTION = 'wpSessions';
 export const WP_SESSION_RTDB_PATH = 'wpSessions';
 

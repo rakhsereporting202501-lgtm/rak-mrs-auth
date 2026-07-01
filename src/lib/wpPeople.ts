@@ -30,6 +30,7 @@ export function normalizeWpEmployee(raw: Partial<WpEmployee>): WpEmployee {
     nameEn: cleanWpText(raw.nameEn || split.nameEn),
     position: cleanWpText(raw.position || ''),
     department: cleanWpText(raw.department || ''),
+    city: cleanWpText(raw.city || 'Unassigned'),
     accountType,
     active: raw.active !== false,
     authEmail: cleanWpText(raw.authEmail || ''),
@@ -47,6 +48,7 @@ export function wpEmployeeSearchText(person: WpEmployee) {
     person.memberCode,
     person.position || '',
     person.department || '',
+    person.city || '',
     person.accountType || '',
   ].join(' ').toLowerCase();
 }
