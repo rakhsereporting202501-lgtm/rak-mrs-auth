@@ -9,7 +9,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { ref, remove } from 'firebase/database';
-import { Building2, Database, Hammer, MapPin, Monitor, Save, Search, Shield, Trash2, UserRound, Wrench } from 'lucide-react';
+import { Building2, CheckCircle2, Database, Hammer, MapPin, Monitor, Plus, Save, Search, Shield, Trash2, UserRound, Wrench, X } from 'lucide-react';
 import { useWpAuth } from '../context/WpAuthContext';
 import { WP_FIREBASE_API_KEY, getWpDb, getWpRealtimeDb } from '../lib/wpFirebase';
 import { cleanWpText, displayWpPersonName, normalizeWpEmployee, splitWpName, wpEmployeeSearchText } from '../lib/wpPeople';
@@ -131,6 +131,8 @@ export default function WpAdmin() {
   const [coordinators, setCoordinators] = useState<WpCoordinatorDoc[]>([]);
   const [sessions, setSessions] = useState<WpSessionDoc[]>([]);
   const [qText, setQText] = useState('');
+  const [coordinatorIncludeSearch, setCoordinatorIncludeSearch] = useState('');
+  const [coordinatorExcludeSearch, setCoordinatorExcludeSearch] = useState('');
   const [employeeForm, setEmployeeForm] = useState<EmployeeForm>(emptyEmployeeForm);
   const [coordinatorForm, setCoordinatorForm] = useState<CoordinatorForm>(emptyCoordinatorForm);
   const [projectForm, setProjectForm] = useState<WpProject>(emptyProject);
@@ -186,6 +188,30 @@ export default function WpAdmin() {
   }, [employees, qText]);
 
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
+
+  const coordinatorEmployeeOptions = useMemo(
+    () => employees.filter((employee) => employee.accountType !== 'ADMIN' && employee.active !== false),
+    [employees],
+  );
+
+  const coordinatorSearchResults = (searchText: string, selectedIds: string[]) => {
+    const selected = new Set(selectedIds);
+    const tokens = searchText.toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean);
+    return coordinatorEmployeeOptions
+      .filter((employee) => {
+        if (selected.has(employee.id)) return false;
+        if (!tokens.length) return true;
+        const hay = wpEmployeeSearchText(employee);
+        return tokens.every((token) => hay.includes(token));
+      })
+      .slice(0, 120);
+  };
+
+  const employeeLabel = (employeeId: string) => {
+    const employee = employeeById.get(employeeId);
+    if (!employee) return employeeId;
+    return displayWpPersonName(employee, locale);
+  };
 
   const editEmployee = (employee: WpEmployee) => {
     const split = splitWpName(employee.fullName);
@@ -264,21 +290,33 @@ export default function WpAdmin() {
     event.preventDefault();
     const employee = employeeById.get(coordinatorForm.employeeId);
     if (!employee) return;
-    await setDoc(doc(getWpDb(), WP_COORDINATORS_COLLECTION, employee.id), {
-      id: employee.id,
-      employeeId: employee.id,
-      employeeName: displayWpPersonName(employee, locale),
-      active: coordinatorForm.active,
-      departmentIds: coordinatorForm.departmentIds,
-      includeEmployeeIds: coordinatorForm.includeEmployeeIds,
-      excludeEmployeeIds: coordinatorForm.excludeEmployeeIds,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-    await setDoc(doc(getWpDb(), WP_EMPLOYEES_COLLECTION, employee.id), {
-      accountType: employee.accountType === 'ADMIN' ? 'ADMIN' : 'COORDINATOR',
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-    setCoordinatorForm(emptyCoordinatorForm);
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      await setDoc(doc(getWpDb(), WP_COORDINATORS_COLLECTION, employee.id), {
+        id: employee.id,
+        employeeId: employee.id,
+        employeeName: displayWpPersonName(employee, locale),
+        active: coordinatorForm.active,
+        departmentIds: coordinatorForm.departmentIds,
+        includeEmployeeIds: coordinatorForm.includeEmployeeIds,
+        excludeEmployeeIds: coordinatorForm.excludeEmployeeIds,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      await setDoc(doc(getWpDb(), WP_EMPLOYEES_COLLECTION, employee.id), {
+        accountType: employee.accountType === 'ADMIN' ? 'ADMIN' : 'COORDINATOR',
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setCoordinatorForm(emptyCoordinatorForm);
+      setCoordinatorIncludeSearch('');
+      setCoordinatorExcludeSearch('');
+      setMessage(isAr ? 'تم حفظ المنسق.' : 'Coordinator saved.');
+    } catch (err: any) {
+      setError(err?.message || (isAr ? 'تعذر حفظ المنسق.' : 'Could not save coordinator.'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const saveProject = async (event: FormEvent) => {
@@ -369,6 +407,99 @@ export default function WpAdmin() {
     </label>
   );
 
+  const renderCoordinatorPeoplePicker = ({
+    title,
+    description,
+    search,
+    onSearch,
+    selectedIds,
+    onChange,
+    tone,
+  }: {
+    title: string;
+    description: string;
+    search: string;
+    onSearch: (value: string) => void;
+    selectedIds: string[];
+    onChange: (next: string[]) => void;
+    tone: 'include' | 'exclude';
+  }) => {
+    const selectedSet = new Set(selectedIds);
+    const results = coordinatorSearchResults(search, selectedIds);
+    const toneClass = tone === 'include'
+      ? 'border-emerald-100 bg-emerald-50/60'
+      : 'border-rose-100 bg-rose-50/60';
+    const badgeClass = tone === 'include'
+      ? 'border-emerald-200 bg-white text-emerald-800'
+      : 'border-rose-200 bg-white text-rose-800';
+
+    return (
+      <section className={`rounded-2xl border p-3 sm:p-4 ${toneClass}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="font-semibold">{title}</div>
+            <div className="mt-1 text-xs leading-5 text-gray-600">{description}</div>
+          </div>
+          <span className="badge border-gray-200 bg-white text-gray-700">{selectedIds.length}</span>
+        </div>
+
+        <div className="relative mt-3">
+          <Search className={`absolute top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
+          <input
+            className={`input ${isAr ? 'pr-9 text-right' : 'pl-9 text-left'}`}
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+            placeholder={isAr ? 'بحث بالاسم أو القسم أو المنصب' : 'Search by name, department, or position'}
+          />
+        </div>
+
+        <div className="mt-3 min-h-12 rounded-2xl border border-white/70 bg-white/70 p-2">
+          {selectedIds.length ? (
+            <div className="flex flex-wrap gap-2">
+              {selectedIds.map((employeeId) => (
+                <span key={employeeId} className={`inline-flex max-w-full items-center gap-2 rounded-xl border px-2.5 py-1 text-xs ${badgeClass}`}>
+                  <span className="truncate">{employeeLabel(employeeId)}</span>
+                  <button
+                    type="button"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-gray-100"
+                    onClick={() => onChange(selectedIds.filter((entry) => entry !== employeeId))}
+                    aria-label={isAr ? 'إزالة' : 'Remove'}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="px-1 py-2 text-xs text-gray-500">{isAr ? 'لا يوجد اختيار حالياً.' : 'No selection yet.'}</div>
+          )}
+        </div>
+
+        <div className="mt-3 grid max-h-80 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+          {results.map((employee) => (
+            <button
+              key={employee.id}
+              type="button"
+              className="flex items-center justify-between gap-3 rounded-2xl border border-white bg-white p-3 text-start shadow-sm hover:border-blue-200 hover:bg-blue-50"
+              onClick={() => !selectedSet.has(employee.id) && onChange([...selectedIds, employee.id])}
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{displayWpPersonName(employee, locale)}</div>
+                <div className="truncate text-xs text-gray-500">{employee.position || '-'} - {employee.department || '-'} - {employee.city || '-'}</div>
+              </div>
+              <Plus className="h-4 w-4 shrink-0 text-blue-600" />
+            </button>
+          ))}
+          {!results.length && (
+            <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-3 text-sm text-gray-500 sm:col-span-2">
+              {isAr ? 'لا توجد نتائج مطابقة.' : 'No matching people.'}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
   const lookupOptions = (items: WpLookupDoc[]) => items.filter((item) => item.active !== false).map((item) => (
     <option key={item.id} value={item.name}>{item.name}</option>
   ));
@@ -387,7 +518,16 @@ export default function WpAdmin() {
         </div>
       </div>
       <form className="card p-4 space-y-3" onSubmit={(event) => saveLookup(event, collectionName)}>
-        <div className="font-semibold">{isAr ? 'إضافة / تعديل' : 'Add / Edit'}</div>
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="font-semibold">{isAr ? 'إضافة / تعديل' : 'Add / Edit'}</div>
+            <div className="mt-1 text-xs text-gray-500">{isAr ? 'اكتب قيمة جديدة أو اختر عنصراً من القائمة للتعديل.' : 'Enter a new value or choose an item to edit.'}</div>
+          </div>
+          <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => setLookupForm(emptyLookup)}>
+            <Plus className="h-4 w-4" />
+            <span>{isAr ? 'جديد' : 'New'}</span>
+          </button>
+        </div>
         <Field label="ID">
           <input className="input" value={lookupForm.id} onChange={(e) => setLookupForm((p) => ({ ...p, id: e.target.value }))} />
         </Field>
@@ -512,67 +652,162 @@ export default function WpAdmin() {
       )}
 
       {tab === 'coordinators' && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_430px]">
+        <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
           <div className="card p-4">
-            <div className="font-semibold mb-3">{isAr ? 'المنسقين' : 'Coordinators'}</div>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <div className="font-semibold">{isAr ? 'المنسقين' : 'Coordinators'}</div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {isAr ? 'اختر منسقاً للتعديل أو أنشئ منسقاً جديداً.' : 'Choose a coordinator to edit or create a new one.'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-ghost inline-flex items-center gap-2"
+                onClick={() => {
+                  setCoordinatorForm(emptyCoordinatorForm);
+                  setCoordinatorIncludeSearch('');
+                  setCoordinatorExcludeSearch('');
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                <span>{isAr ? 'جديد' : 'New'}</span>
+              </button>
+            </div>
             <div className="max-h-[620px] overflow-y-auto space-y-2">
               {coordinators.map((coordinator) => (
                 <button key={coordinator.id} type="button" className="w-full rounded-2xl border border-gray-200 p-3 text-start hover:bg-blue-50" onClick={() => editCoordinator(coordinator)}>
-                  <div className="font-semibold">{coordinator.employeeName || coordinator.employeeId}</div>
+                  <div className="font-semibold">{employeeLabel(coordinator.employeeId)}</div>
                   <div className="text-xs text-gray-500">{(coordinator.departmentIds || []).join(' - ') || '-'}</div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    +{(coordinator.includeEmployeeIds || []).length} / -{(coordinator.excludeEmployeeIds || []).length}
+                  <div className="mt-2 flex flex-wrap gap-1 text-xs">
+                    <span className="badge border-emerald-200 bg-emerald-50 text-emerald-700">
+                      {isAr ? 'إضافي' : 'Extra'} {(coordinator.includeEmployeeIds || []).length}
+                    </span>
+                    <span className="badge border-rose-200 bg-rose-50 text-rose-700">
+                      {isAr ? 'مستثنى' : 'Excluded'} {(coordinator.excludeEmployeeIds || []).length}
+                    </span>
                   </div>
                 </button>
               ))}
+              {!coordinators.length && (
+                <div className="rounded-2xl border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+                  {isAr ? 'لا يوجد منسقين بعد.' : 'No coordinators yet.'}
+                </div>
+              )}
             </div>
           </div>
-          <form className="card p-4 space-y-3" onSubmit={saveCoordinator}>
-            <div className="font-semibold">{isAr ? 'تفاصيل المنسق' : 'Coordinator details'}</div>
-            <Field label={isAr ? 'المنسق' : 'Coordinator'}>
-              <select className="input" value={coordinatorForm.employeeId} onChange={(e) => setCoordinatorForm((p) => ({ ...p, employeeId: e.target.value }))}>
-                <option value="">{isAr ? 'اختر الموظف' : 'Choose employee'}</option>
-                {employees.filter((employee) => employee.accountType !== 'ADMIN').map((employee) => (
-                  <option key={employee.id} value={employee.id}>{displayWpPersonName(employee, locale)} - {employee.department || '-'}</option>
-                ))}
-              </select>
-            </Field>
-            <div>
-              <div className="text-xs text-gray-500 mb-1">{isAr ? 'الأقسام التي يمكن تنسيقها' : 'Allowed departments'}</div>
-              <div className="max-h-44 overflow-y-auto rounded-2xl border border-gray-200 p-2 space-y-1">
-                {departments.map((department) => (
-                  <label key={department.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={coordinatorForm.departmentIds.includes(department.name)}
-                      onChange={() => toggleArrayValue(department.name, coordinatorForm.departmentIds, (departmentIds) => setCoordinatorForm((p) => ({ ...p, departmentIds })))}
-                    />
-                    <span>{department.name}</span>
-                  </label>
-                ))}
+          <form className="card p-4 space-y-4" onSubmit={saveCoordinator}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold">{isAr ? 'صلاحيات المنسق' : 'Coordinator access'}</div>
+                <div className="mt-1 text-sm text-gray-500">
+                  {isAr ? 'الأقسام تحدد الفريق الأساسي، والإضافات والاستثناءات تعدل القائمة بدقة.' : 'Departments define the base team; extra and excluded people fine tune access.'}
+                </div>
+              </div>
+              <label className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm">
+                <input type="checkbox" checked={coordinatorForm.active} onChange={(e) => setCoordinatorForm((p) => ({ ...p, active: e.target.checked }))} />
+                <span>{isAr ? 'فعال' : 'Active'}</span>
+              </label>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.65fr)]">
+              <Field label={isAr ? 'اسم المنسق' : 'Coordinator name'}>
+                <select className="input" value={coordinatorForm.employeeId} onChange={(e) => setCoordinatorForm((p) => ({ ...p, employeeId: e.target.value }))}>
+                  <option value="">{isAr ? 'اختر موظفاً ليصبح منسقاً' : 'Choose employee to become coordinator'}</option>
+                  {coordinatorEmployeeOptions.map((employee) => (
+                    <option key={employee.id} value={employee.id}>{displayWpPersonName(employee, locale)} - {employee.department || '-'}</option>
+                  ))}
+                </select>
+              </Field>
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-800">
+                {isAr
+                  ? 'عند الحفظ يتحول نوع حساب الموظف إلى COORDINATOR، ويستطيع إنشاء خطط عمل حسب هذه الصلاحيات.'
+                  : 'Saving changes the employee account type to COORDINATOR and allows plan creation based on this access.'}
               </div>
             </div>
-            <Field label={isAr ? 'أشخاص إضافيين يمكن تنسيقهم' : 'Extra allowed people'}>
-              <select className="input h-40" multiple value={coordinatorForm.includeEmployeeIds} onChange={(e) => setCoordinatorForm((p) => ({ ...p, includeEmployeeIds: Array.from(e.target.selectedOptions).map((option) => option.value) }))}>
-                {employees.map((employee) => <option key={employee.id} value={employee.id}>{displayWpPersonName(employee, locale)} - {employee.department || '-'}</option>)}
-              </select>
-            </Field>
-            <Field label={isAr ? 'استثناء أشخاص من الأقسام' : 'Excluded people'}>
-              <select className="input h-40" multiple value={coordinatorForm.excludeEmployeeIds} onChange={(e) => setCoordinatorForm((p) => ({ ...p, excludeEmployeeIds: Array.from(e.target.selectedOptions).map((option) => option.value) }))}>
-                {employees.map((employee) => <option key={employee.id} value={employee.id}>{displayWpPersonName(employee, locale)} - {employee.department || '-'}</option>)}
-              </select>
-            </Field>
+
+            <section className="rounded-2xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-semibold">{isAr ? 'الأقسام المسموحة' : 'Allowed departments'}</div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    {isAr ? 'كل موظف داخل هذه الأقسام يظهر للمنسق تلقائياً.' : 'Every employee in these departments is automatically available to the coordinator.'}
+                  </div>
+                </div>
+                <span className="badge border-gray-200 bg-white text-gray-700">{coordinatorForm.departmentIds.length}</span>
+              </div>
+              <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
+                {departments.map((department) => {
+                  const selected = coordinatorForm.departmentIds.includes(department.name);
+                  return (
+                    <button
+                      key={department.id}
+                      type="button"
+                      className={`flex items-center justify-between gap-2 rounded-2xl border p-3 text-sm ${selected ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white hover:bg-blue-50'}`}
+                      onClick={() => toggleArrayValue(department.name, coordinatorForm.departmentIds, (departmentIds) => setCoordinatorForm((p) => ({ ...p, departmentIds })))}
+                    >
+                      <span>{department.name}</span>
+                      {selected && <CheckCircle2 className="h-4 w-4" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              {renderCoordinatorPeoplePicker({
+                title: isAr ? 'أشخاص إضافيين' : 'Extra allowed people',
+                description: isAr
+                  ? 'استخدمها لإضافة أشخاص من خارج الأقسام المختارة إلى صلاحية هذا المنسق.'
+                  : 'Use this to add people outside the selected departments to this coordinator.',
+                search: coordinatorIncludeSearch,
+                onSearch: setCoordinatorIncludeSearch,
+                selectedIds: coordinatorForm.includeEmployeeIds,
+                onChange: (includeEmployeeIds) => setCoordinatorForm((p) => ({ ...p, includeEmployeeIds })),
+                tone: 'include',
+              })}
+              {renderCoordinatorPeoplePicker({
+                title: isAr ? 'أشخاص مستثنين' : 'Excluded people',
+                description: isAr
+                  ? 'استخدمها لإخفاء أشخاص من الأقسام المختارة حتى لا يستطيع هذا المنسق تنسيقهم.'
+                  : 'Use this to hide people from selected departments from this coordinator.',
+                search: coordinatorExcludeSearch,
+                onSearch: setCoordinatorExcludeSearch,
+                selectedIds: coordinatorForm.excludeEmployeeIds,
+                onChange: (excludeEmployeeIds) => setCoordinatorForm((p) => ({ ...p, excludeEmployeeIds })),
+                tone: 'exclude',
+              })}
+            </div>
+
             {selectedCoordinatorOverlaps.length > 0 && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                 <div className="font-semibold mb-1">{isAr ? 'تداخل مع منسقين آخرين' : 'Overlap with other coordinators'}</div>
-                {selectedCoordinatorOverlaps.map((coordinator) => <div key={coordinator.id}>{coordinator.employeeName || coordinator.employeeId}</div>)}
+                <div className="flex flex-wrap gap-2">
+                  {selectedCoordinatorOverlaps.map((coordinator) => (
+                    <span key={coordinator.id} className="rounded-xl border border-amber-200 bg-white px-2 py-1">
+                      {employeeLabel(coordinator.employeeId)}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={coordinatorForm.active} onChange={(e) => setCoordinatorForm((p) => ({ ...p, active: e.target.checked }))} />
-              <span>{isAr ? 'فعال' : 'Active'}</span>
-            </label>
-            <button type="submit" className="btn-primary">{isAr ? 'حفظ' : 'Save'}</button>
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" className="btn-primary inline-flex items-center gap-2 disabled:opacity-50" disabled={busy || !coordinatorForm.employeeId}>
+                <Save className="h-4 w-4" />
+                <span>{isAr ? 'حفظ المنسق' : 'Save coordinator'}</span>
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => {
+                  setCoordinatorForm(emptyCoordinatorForm);
+                  setCoordinatorIncludeSearch('');
+                  setCoordinatorExcludeSearch('');
+                }}
+              >
+                {isAr ? 'تفريغ' : 'Clear'}
+              </button>
+            </div>
           </form>
         </div>
       )}
@@ -580,7 +815,16 @@ export default function WpAdmin() {
       {tab === 'projects' && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="card p-4">
-            <div className="font-semibold mb-3">{isAr ? 'المشاريع' : 'Projects'}</div>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <div className="font-semibold">{isAr ? 'المشاريع' : 'Projects'}</div>
+                <div className="mt-1 text-xs text-gray-500">{isAr ? 'يمكنك إضافة مشروع جديد أو تعديل مشروع موجود.' : 'Add a new project or edit an existing one.'}</div>
+              </div>
+              <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => setProjectForm(emptyProject)}>
+                <Plus className="h-4 w-4" />
+                <span>{isAr ? 'جديد' : 'New'}</span>
+              </button>
+            </div>
             <div className="max-h-[620px] overflow-y-auto space-y-2">
               {projects.map((project) => (
                 <button key={project.id} type="button" className="w-full rounded-2xl border border-gray-200 p-3 text-start hover:bg-blue-50" onClick={() => setProjectForm(project)}>
@@ -596,7 +840,14 @@ export default function WpAdmin() {
             <Field label="Code"><input className="input" value={projectForm.code || ''} onChange={(e) => setProjectForm((p) => ({ ...p, code: e.target.value }))} /></Field>
             <Field label="English name"><input className="input" value={projectForm.nameEn || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameEn: e.target.value }))} /></Field>
             <Field label="Arabic name"><input className="input" value={projectForm.nameAr || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
-            <button className="btn-primary" type="submit">{isAr ? 'حفظ' : 'Save'}</button>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={projectForm.active !== false} onChange={(e) => setProjectForm((p) => ({ ...p, active: e.target.checked }))} />
+              <span>{isAr ? 'فعال' : 'Active'}</span>
+            </label>
+            <div className="flex gap-2">
+              <button className="btn-primary" type="submit">{isAr ? 'حفظ' : 'Save'}</button>
+              <button type="button" className="btn-ghost" onClick={() => setProjectForm(emptyProject)}>{isAr ? 'جديد' : 'New'}</button>
+            </div>
           </form>
         </div>
       )}
@@ -604,7 +855,16 @@ export default function WpAdmin() {
       {tab === 'engineers' && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="card p-4">
-            <div className="font-semibold mb-3">{isAr ? 'المهندسين' : 'Engineers'}</div>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <div className="font-semibold">{isAr ? 'المهندسين' : 'Engineers'}</div>
+                <div className="mt-1 text-xs text-gray-500">{isAr ? 'يمكنك إضافة مهندس جديد أو تعديل مهندس موجود.' : 'Add a new engineer or edit an existing one.'}</div>
+              </div>
+              <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => setEngineerForm(emptyEngineer)}>
+                <Plus className="h-4 w-4" />
+                <span>{isAr ? 'جديد' : 'New'}</span>
+              </button>
+            </div>
             <div className="max-h-[620px] overflow-y-auto space-y-2">
               {engineers.map((engineer) => (
                 <button key={engineer.id} type="button" className="w-full rounded-2xl border border-gray-200 p-3 text-start hover:bg-blue-50" onClick={() => setEngineerForm(engineer)}>
@@ -621,7 +881,14 @@ export default function WpAdmin() {
             <Field label="Arabic name"><input className="input" value={engineerForm.nameAr || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
             <Field label="Position"><select className="input" value={engineerForm.position || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, position: e.target.value }))}><option value="">Choose</option>{lookupOptions(positions)}</select></Field>
             <Field label="Department"><select className="input" value={engineerForm.department || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, department: e.target.value }))}><option value="">Choose</option>{lookupOptions(departments)}</select></Field>
-            <button className="btn-primary" type="submit">{isAr ? 'حفظ' : 'Save'}</button>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={engineerForm.active !== false} onChange={(e) => setEngineerForm((p) => ({ ...p, active: e.target.checked }))} />
+              <span>{isAr ? 'فعال' : 'Active'}</span>
+            </label>
+            <div className="flex gap-2">
+              <button className="btn-primary" type="submit">{isAr ? 'حفظ' : 'Save'}</button>
+              <button type="button" className="btn-ghost" onClick={() => setEngineerForm(emptyEngineer)}>{isAr ? 'جديد' : 'New'}</button>
+            </div>
           </form>
         </div>
       )}
