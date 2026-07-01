@@ -156,6 +156,15 @@ async function createPasswordAccount(email: string, password: string) {
   return body.localId as string;
 }
 
+function AdminField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="block text-xs text-gray-500 mb-1">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 export default function WpAdmin() {
   const { isAdmin, locale } = useWpAuth();
   const [tab, setTab] = useState<Tab>('employees');
@@ -563,13 +572,6 @@ export default function WpAdmin() {
   ];
   const activeSection = sections.find((section) => section.key === tab) || sections[0];
 
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <label className="block">
-      <span className="block text-xs text-gray-500 mb-1">{label}</span>
-      {children}
-    </label>
-  );
-
   const StatusBadge = ({ active }: { active?: boolean }) => (
     <span className={`badge ${active === false ? 'border-gray-200 bg-gray-50 text-gray-600' : 'border-green-200 bg-green-50 text-green-700'}`}>
       {active === false ? (isAr ? 'غير فعال' : 'Inactive') : (isAr ? 'فعال' : 'Active')}
@@ -838,47 +840,47 @@ export default function WpAdmin() {
   const renderEmployeeForm = () => (
     <form className="space-y-3" onSubmit={saveEmployee}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="ID"><input className="input" value={employeeForm.id} onChange={(e) => setEmployeeForm((p) => ({ ...p, id: e.target.value }))} /></Field>
-        <Field label={isAr ? 'كود الموظف' : 'Member code'}><input className="input" value={employeeForm.memberCode} onChange={(e) => setEmployeeForm((p) => ({ ...p, memberCode: e.target.value }))} /></Field>
+        <AdminField label="ID"><input className="input" value={employeeForm.id} onChange={(e) => setEmployeeForm((p) => ({ ...p, id: e.target.value }))} /></AdminField>
+        <AdminField label={isAr ? 'كود الموظف' : 'Member code'}><input className="input" value={employeeForm.memberCode} onChange={(e) => setEmployeeForm((p) => ({ ...p, memberCode: e.target.value }))} /></AdminField>
       </div>
-      <Field label={isAr ? 'الاسم الكامل' : 'Full name'}><input className="input" value={employeeForm.fullName} onChange={(e) => setEmployeeForm((p) => ({ ...p, fullName: e.target.value }))} /></Field>
+      <AdminField label={isAr ? 'الاسم الكامل' : 'Full name'}><input className="input" value={employeeForm.fullName} onChange={(e) => setEmployeeForm((p) => ({ ...p, fullName: e.target.value }))} /></AdminField>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={isAr ? 'الاسم العربي' : 'Arabic name'}><input className="input" value={employeeForm.nameAr} onChange={(e) => setEmployeeForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
-        <Field label={isAr ? 'الاسم الإنجليزي' : 'English name'}><input className="input" value={employeeForm.nameEn} onChange={(e) => setEmployeeForm((p) => ({ ...p, nameEn: e.target.value }))} /></Field>
+        <AdminField label={isAr ? 'الاسم العربي' : 'Arabic name'}><input className="input" value={employeeForm.nameAr} onChange={(e) => setEmployeeForm((p) => ({ ...p, nameAr: e.target.value }))} /></AdminField>
+        <AdminField label={isAr ? 'الاسم الإنجليزي' : 'English name'}><input className="input" value={employeeForm.nameEn} onChange={(e) => setEmployeeForm((p) => ({ ...p, nameEn: e.target.value }))} /></AdminField>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <Field label={isAr ? 'المنصب' : 'Position'}>
+        <AdminField label={isAr ? 'المنصب' : 'Position'}>
           <select className="input" value={employeeForm.position} onChange={(e) => setEmployeeForm((p) => ({ ...p, position: e.target.value }))}>
             <option value="">{isAr ? 'اختر المنصب' : 'Choose position'}</option>
             {lookupOptions(positions)}
           </select>
-        </Field>
-        <Field label={isAr ? 'القسم' : 'Department'}>
+        </AdminField>
+        <AdminField label={isAr ? 'القسم' : 'Department'}>
           <select className="input" value={employeeForm.department} onChange={(e) => setEmployeeForm((p) => ({ ...p, department: e.target.value }))}>
             <option value="">{isAr ? 'اختر القسم' : 'Choose department'}</option>
             {lookupOptions(departments)}
           </select>
-        </Field>
-        <Field label={isAr ? 'المدينة' : 'City'}>
+        </AdminField>
+        <AdminField label={isAr ? 'المدينة' : 'City'}>
           <select className="input" value={employeeForm.city} onChange={(e) => setEmployeeForm((p) => ({ ...p, city: e.target.value }))}>
             <option value="">{isAr ? 'اختر المدينة' : 'Choose city'}</option>
             {lookupOptions(cities)}
           </select>
-        </Field>
+        </AdminField>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={isAr ? 'نوع الحساب' : 'Account type'}>
+        <AdminField label={isAr ? 'نوع الحساب' : 'Account type'}>
           <select className="input" value={employeeForm.accountType} onChange={(e) => setEmployeeForm((p) => ({ ...p, accountType: e.target.value as WpAccountType }))}>
             <option value="VIEWER">VIEWER</option>
             <option value="COORDINATOR">COORDINATOR</option>
             <option value="ADMIN">ADMIN</option>
           </select>
-        </Field>
-        <Field label={isAr ? 'بريد تسجيل الدخول' : 'Login email'}><input className="input" value={employeeForm.authEmail} onChange={(e) => setEmployeeForm((p) => ({ ...p, authEmail: e.target.value }))} /></Field>
+        </AdminField>
+        <AdminField label={isAr ? 'بريد تسجيل الدخول' : 'Login email'}><input className="input" value={employeeForm.authEmail} onChange={(e) => setEmployeeForm((p) => ({ ...p, authEmail: e.target.value }))} /></AdminField>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={isAr ? 'كلمة مرور جديدة' : 'New password'}><input className="input" type="password" value={employeeForm.password} onChange={(e) => setEmployeeForm((p) => ({ ...p, password: e.target.value }))} /></Field>
-        <Field label="Firebase Auth UID"><input className="input bg-gray-50" value={employeeForm.authUid} onChange={(e) => setEmployeeForm((p) => ({ ...p, authUid: e.target.value }))} /></Field>
+        <AdminField label={isAr ? 'كلمة مرور جديدة' : 'New password'}><input className="input" type="password" value={employeeForm.password} onChange={(e) => setEmployeeForm((p) => ({ ...p, password: e.target.value }))} /></AdminField>
+        <AdminField label="Firebase Auth UID"><input className="input bg-gray-50" value={employeeForm.authUid} onChange={(e) => setEmployeeForm((p) => ({ ...p, authUid: e.target.value }))} /></AdminField>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={employeeForm.active} onChange={(e) => setEmployeeForm((p) => ({ ...p, active: e.target.checked }))} />
@@ -899,14 +901,14 @@ export default function WpAdmin() {
   const renderCoordinatorForm = () => (
     <form className="space-y-4" onSubmit={saveCoordinator}>
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.65fr)]">
-        <Field label={isAr ? 'اسم المنسق' : 'Coordinator name'}>
+        <AdminField label={isAr ? 'اسم المنسق' : 'Coordinator name'}>
           <select className="input" value={coordinatorForm.employeeId} onChange={(e) => setCoordinatorForm((p) => ({ ...p, employeeId: e.target.value }))}>
             <option value="">{isAr ? 'اختر موظفاً ليصبح منسقاً' : 'Choose employee to become coordinator'}</option>
             {coordinatorEmployeeOptions.map((employee) => (
               <option key={employee.id} value={employee.id}>{displayWpPersonName(employee, locale)} - {employee.department || '-'}</option>
             ))}
           </select>
-        </Field>
+        </AdminField>
         <label className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm">
           <input type="checkbox" checked={coordinatorForm.active} onChange={(e) => setCoordinatorForm((p) => ({ ...p, active: e.target.checked }))} />
           <span>{isAr ? 'فعال' : 'Active'}</span>
@@ -990,12 +992,12 @@ export default function WpAdmin() {
   const renderProjectForm = () => (
     <form className="space-y-3" onSubmit={saveProject}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="ID"><input className="input" value={projectForm.id || ''} onChange={(e) => setProjectForm((p) => ({ ...p, id: e.target.value }))} /></Field>
-        <Field label="Code"><input className="input" value={projectForm.code || ''} onChange={(e) => setProjectForm((p) => ({ ...p, code: e.target.value }))} /></Field>
+        <AdminField label="ID"><input className="input" value={projectForm.id || ''} onChange={(e) => setProjectForm((p) => ({ ...p, id: e.target.value }))} /></AdminField>
+        <AdminField label="Code"><input className="input" value={projectForm.code || ''} onChange={(e) => setProjectForm((p) => ({ ...p, code: e.target.value }))} /></AdminField>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="English name"><input className="input" value={projectForm.nameEn || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameEn: e.target.value, name: e.target.value }))} /></Field>
-        <Field label="Arabic name"><input className="input" value={projectForm.nameAr || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
+        <AdminField label="English name"><input className="input" value={projectForm.nameEn || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameEn: e.target.value, name: e.target.value }))} /></AdminField>
+        <AdminField label="Arabic name"><input className="input" value={projectForm.nameAr || ''} onChange={(e) => setProjectForm((p) => ({ ...p, nameAr: e.target.value }))} /></AdminField>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={projectForm.active !== false} onChange={(e) => setProjectForm((p) => ({ ...p, active: e.target.checked }))} />
@@ -1010,24 +1012,24 @@ export default function WpAdmin() {
 
   const renderEngineerForm = () => (
     <form className="space-y-3" onSubmit={saveEngineer}>
-      <Field label="ID"><input className="input" value={engineerForm.id || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, id: e.target.value }))} /></Field>
+      <AdminField label="ID"><input className="input" value={engineerForm.id || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, id: e.target.value }))} /></AdminField>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="English name"><input className="input" value={engineerForm.nameEn || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, nameEn: e.target.value, name: e.target.value }))} /></Field>
-        <Field label="Arabic name"><input className="input" value={engineerForm.nameAr || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, nameAr: e.target.value }))} /></Field>
+        <AdminField label="English name"><input className="input" value={engineerForm.nameEn || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, nameEn: e.target.value, name: e.target.value }))} /></AdminField>
+        <AdminField label="Arabic name"><input className="input" value={engineerForm.nameAr || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, nameAr: e.target.value }))} /></AdminField>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Position">
+        <AdminField label="Position">
           <select className="input" value={engineerForm.position || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, position: e.target.value }))}>
             <option value="">Choose</option>
             {lookupOptions(positions)}
           </select>
-        </Field>
-        <Field label="Department">
+        </AdminField>
+        <AdminField label="Department">
           <select className="input" value={engineerForm.department || ''} onChange={(e) => setEngineerForm((p) => ({ ...p, department: e.target.value }))}>
             <option value="">Choose</option>
             {lookupOptions(departments)}
           </select>
-        </Field>
+        </AdminField>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={engineerForm.active !== false} onChange={(e) => setEngineerForm((p) => ({ ...p, active: e.target.checked }))} />
@@ -1054,12 +1056,12 @@ export default function WpAdmin() {
 
   const renderLookupForm = () => (
     <form className="space-y-3" onSubmit={(event) => saveLookup(event, lookupCollectionForDialog(), lookupSuccessText())}>
-      <Field label="ID">
+      <AdminField label="ID">
         <input className="input" value={lookupForm.id} onChange={(e) => setLookupForm((p) => ({ ...p, id: e.target.value }))} />
-      </Field>
-      <Field label={isAr ? 'الاسم' : 'Name'}>
+      </AdminField>
+      <AdminField label={isAr ? 'الاسم' : 'Name'}>
         <input className="input" value={lookupForm.name} onChange={(e) => setLookupForm((p) => ({ ...p, name: e.target.value }))} />
-      </Field>
+      </AdminField>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={lookupForm.active !== false} onChange={(e) => setLookupForm((p) => ({ ...p, active: e.target.checked }))} />
         <span>{isAr ? 'فعال' : 'Active'}</span>
