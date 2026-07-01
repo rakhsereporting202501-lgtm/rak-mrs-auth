@@ -27,6 +27,7 @@ export default function WpCoordinator() {
   const [excludeEmployeeIds, setExcludeEmployeeIds] = useState<string[]>([]);
   const [includeSearch, setIncludeSearch] = useState('');
   const [excludeSearch, setExcludeSearch] = useState('');
+  const [overlapDetailsOpen, setOverlapDetailsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const isAr = locale === 'ar';
 
@@ -96,6 +97,17 @@ export default function WpCoordinator() {
   const personName = (employeeId: string) => {
     const employee = employeeById.get(employeeId);
     return employee ? displayWpPersonName(employee, locale) : employeeId;
+  };
+
+  const overlapDetails = (coordinator: WpCoordinatorDoc) => {
+    const selectedDepartments = new Set(departmentIds || []);
+    const selectedPeople = new Set([...(includeEmployeeIds || []), ...(excludeEmployeeIds || [])]);
+    const sharedDepartments = (coordinator.departmentIds || []).filter((department) => selectedDepartments.has(department));
+    const sharedPeople = Array.from(new Set([
+      ...(coordinator.includeEmployeeIds || []),
+      ...(coordinator.excludeEmployeeIds || []),
+    ])).filter((employeeId) => selectedPeople.has(employeeId));
+    return { sharedDepartments, sharedPeople };
   };
 
   const renderPeoplePicker = ({
@@ -222,25 +234,21 @@ export default function WpCoordinator() {
             </div>
           </div>
         </div>
-        <button type="submit" className="btn-primary inline-flex items-center gap-2">
-          <Save className="h-4 w-4" />
-          <span>{isAr ? 'حفظ' : 'Save'}</span>
-        </button>
       </div>
       {message && <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">{message}</div>}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 sm:p-4">
           <div className="text-xs text-blue-700">{isAr ? 'الأقسام' : 'Departments'}</div>
-          <div className="mt-1 text-2xl font-semibold text-blue-900">{departmentIds.length}</div>
+          <div className="mt-1 text-xl font-semibold text-blue-900 sm:text-2xl">{departmentIds.length}</div>
         </div>
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3 sm:p-4">
           <div className="text-xs text-emerald-700">{isAr ? 'أشخاص إضافيين' : 'Extra people'}</div>
-          <div className="mt-1 text-2xl font-semibold text-emerald-900">{includeEmployeeIds.length}</div>
+          <div className="mt-1 text-xl font-semibold text-emerald-900 sm:text-2xl">{includeEmployeeIds.length}</div>
         </div>
-        <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+        <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3 sm:p-4">
           <div className="text-xs text-rose-700">{isAr ? 'أشخاص مستثنين' : 'Excluded people'}</div>
-          <div className="mt-1 text-2xl font-semibold text-rose-900">{excludeEmployeeIds.length}</div>
+          <div className="mt-1 text-xl font-semibold text-rose-900 sm:text-2xl">{excludeEmployeeIds.length}</div>
         </div>
       </div>
 
@@ -304,12 +312,19 @@ export default function WpCoordinator() {
       </div>
 
       <section className="card p-4">
-        <div className="font-semibold mb-2">{isAr ? 'التداخل مع منسقين آخرين' : 'Overlap with other coordinators'}</div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="font-semibold">{isAr ? 'التداخل مع منسقين آخرين' : 'Overlap with other coordinators'}</div>
+          {overlaps.length > 0 && (
+            <button type="button" className="btn-ghost text-amber-700" onClick={() => setOverlapDetailsOpen(true)}>
+              {isAr ? 'عرض التفاصيل' : 'View details'}
+            </button>
+          )}
+        </div>
         <div className="space-y-2 text-sm">
           {overlaps.map((coordinator) => (
-            <div key={coordinator.id} className="rounded-xl border border-amber-200 bg-amber-50 p-2 text-amber-800">
+            <button key={coordinator.id} type="button" className="w-full rounded-xl border border-amber-200 bg-amber-50 p-2 text-start text-amber-800" onClick={() => setOverlapDetailsOpen(true)}>
               {coordinator.employeeName || coordinator.employeeId}
-            </div>
+            </button>
           ))}
           {!overlaps.length && <div className="text-gray-500">{isAr ? 'لا يوجد تداخل واضح.' : 'No visible overlap.'}</div>}
         </div>
@@ -317,8 +332,50 @@ export default function WpCoordinator() {
 
       <button type="submit" className="btn-primary inline-flex items-center gap-2">
         <Save className="h-4 w-4" />
-        <span>{isAr ? 'حفظ الصلاحيات' : 'Save access'}</span>
+        <span>{isAr ? 'حفظ' : 'Save'}</span>
       </button>
+
+      {overlapDetailsOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+          <div className="max-h-[92vh] w-full overflow-hidden rounded-t-3xl border border-amber-200 bg-white shadow-xl sm:max-w-3xl sm:rounded-3xl">
+            <div className="flex items-start justify-between gap-3 border-b border-amber-100 bg-amber-50 p-4">
+              <div>
+                <div className="text-lg font-semibold text-amber-900">{isAr ? 'تفاصيل التداخل' : 'Overlap details'}</div>
+                <div className="mt-1 text-sm text-amber-800">{displayWpPersonName(wpUser!, locale)}</div>
+              </div>
+              <button type="button" className="btn-ghost bg-white" onClick={() => setOverlapDetailsOpen(false)} aria-label={isAr ? 'إغلاق' : 'Close'}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[calc(92vh-86px)] space-y-3 overflow-y-auto p-4">
+              {overlaps.map((coordinator) => {
+                const details = overlapDetails(coordinator);
+                return (
+                  <div key={coordinator.id} className="rounded-2xl border border-gray-200 p-4">
+                    <div className="font-semibold">{coordinator.employeeName || coordinator.employeeId}</div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                        <div className="text-xs font-semibold text-blue-800">{isAr ? 'الأقسام المشتركة' : 'Shared departments'}</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {details.sharedDepartments.map((department) => <span key={department} className="rounded-xl border border-blue-200 bg-white px-2 py-1 text-xs text-blue-800">{department}</span>)}
+                          {!details.sharedDepartments.length && <span className="text-xs text-blue-700">{isAr ? 'لا يوجد قسم مشترك.' : 'No shared department.'}</span>}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                        <div className="text-xs font-semibold text-emerald-800">{isAr ? 'الأشخاص المشتركون' : 'Shared people'}</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {details.sharedPeople.map((employeeId) => <span key={employeeId} className="rounded-xl border border-emerald-200 bg-white px-2 py-1 text-xs text-emerald-800">{personName(employeeId)}</span>)}
+                          {!details.sharedPeople.length && <span className="text-xs text-emerald-700">{isAr ? 'لا يوجد شخص مشترك.' : 'No shared person.'}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

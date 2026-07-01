@@ -125,6 +125,12 @@ service cloud.firestore {
       return request.resource.data.status in ['DRAFT','SUBMITTED'];
     }
 
+    function rakWpSubmittedEditWindowOpen() {
+      return resource.data.status != 'SUBMITTED'
+        || !('submittedAt' in resource.data)
+        || resource.data.submittedAt > request.time - duration.value(2, 'd');
+    }
+
     /* ===== Helpers: Request document structure ===== */
 
     function docFromDept(doc) {
@@ -559,7 +565,7 @@ service cloud.firestore {
         && rakWpIncomingOwnerValid()
         && rakWpIncomingStatusAllowed();
       allow update: if rakWpPlanOwner(resource.data)
-        && resource.data.status == 'DRAFT'
+        && rakWpSubmittedEditWindowOpen()
         && rakWpOwnerUnchanged()
         && rakWpIncomingStatusAllowed();
       allow delete: if isAdmin()

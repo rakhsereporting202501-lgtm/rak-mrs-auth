@@ -16,6 +16,7 @@ import { useWpAuth } from '../context/WpAuthContext';
 import { setWpUnsavedChangesFlag, WP_UNSAVED_CHANGES_MESSAGE } from '../lib/wpUnsaved';
 import {
   makeWpGroup,
+  timestampMs,
   tomorrowYmd,
   WP_COUNTERS_COLLECTION,
   WP_COORDINATORS_COLLECTION,
@@ -256,12 +257,15 @@ export default function WpPlanEditor() {
   const skipNavigationPromptRef = useRef(false);
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [sourcePlanId, setSourcePlanId] = useState<string | null>(copyId || null);
+  const [submittedAtMs, setSubmittedAtMs] = useState(0);
   const [loading, setLoading] = useState(!!id || !!copyId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const readOnly = !canManagePlans || (isEdit && status === 'SUBMITTED');
+  const viewerMode = isEdit && !canManagePlans;
+  const submittedEditExpired = status === 'SUBMITTED' && submittedAtMs > 0 && Date.now() - submittedAtMs > 2 * 24 * 60 * 60 * 1000;
+  const readOnly = !canManagePlans || (isEdit && status === 'SUBMITTED' && submittedEditExpired);
   const title = isEdit ? (readOnly ? 'عرض خطة العمل' : 'تعديل خطة العمل') : 'خطة عمل جديدة';
 
   useEffect(() => {
@@ -346,6 +350,7 @@ export default function WpPlanEditor() {
         setCoordinatorNameEn(copyId ? '' : (data.coordinatorNameEn || ''));
         setWorkDate(nextWorkDate);
         setStatus(nextStatus);
+        setSubmittedAtMs(copyId ? 0 : timestampMs(data.submittedAt || data.updatedAt || data.createdAt));
         setSourcePlanId(copyId ? data.id : (data.sourcePlanId || null));
         setPlanOwner(copyId ? null : { createdByUid: data.createdByUid, createdBy: data.createdBy });
         const loadedGroups = Array.isArray(data.groups) && data.groups.length
@@ -496,6 +501,7 @@ export default function WpPlanEditor() {
   };
 
   const toggleGroup = (groupId: string) => {
+    if (viewerMode) return;
     setOpenPickerKey(null);
     setDeptPickerOpenKey(null);
     setGroups((prev) => prev.map((group) => (
@@ -1227,8 +1233,8 @@ export default function WpPlanEditor() {
         data-wp-group-id={groupId}
         data-wp-person-type={personType}
         data-wp-person-id={person.id}
-        onClick={() => openPositionEditor(groupId, personType, person)}
-        className={`wp-sortable-row rounded-2xl border px-3 py-2 cursor-pointer ${duplicate ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'} ${isDragging ? 'is-dragging border-blue-300 bg-blue-50 shadow-lg' : ''}`}
+        onClick={() => !readOnly && openPositionEditor(groupId, personType, person)}
+        className={`wp-sortable-row rounded-2xl border px-3 py-2 ${readOnly ? '' : 'cursor-pointer'} ${duplicate ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'} ${isDragging ? 'is-dragging border-blue-300 bg-blue-50 shadow-lg' : ''}`}
       >
         <div className="flex items-center gap-2">
           {!readOnly && (
@@ -1299,7 +1305,7 @@ export default function WpPlanEditor() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-ghost" onClick={() => nav('/wp')}>رجوع</button>
-          {isEdit && (
+          {isEdit && canManagePlans && (
             <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => nav(`/wp/new?copy=${id}`)}>
               <Copy className="h-4 w-4 icon-blue" />
               <span>نسخ كخطة جديدة</span>
@@ -1321,19 +1327,23 @@ export default function WpPlanEditor() {
             <div className="text-xl font-semibold text-gray-900 break-words">{planCode || 'خطة جديدة'}</div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className={`badge ${status === 'SUBMITTED' ? 'status-ready' : 'status-partially_approved'}`}>{statusLabel(status)}</span>
+            {!viewerMode && <span className={`badge ${status === 'SUBMITTED' ? 'status-ready' : 'status-partially_approved'}`}>{statusLabel(status)}</span>}
             <span className="badge border-gray-200 bg-gray-50 text-gray-700">{displayCoordinatorLabel}</span>
           </div>
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">تاريخ العمل</label>
-          <input
-            type="date"
-            className="input w-full sm:max-w-xs text-right"
-            value={workDate}
-            disabled={readOnly}
-            onChange={(e) => setWorkDate(e.target.value)}
-          />
+          {viewerMode ? (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800 sm:max-w-xs">{workDate || '-'}</div>
+          ) : (
+            <input
+              type="date"
+              className="input w-full sm:max-w-xs text-right"
+              value={workDate}
+              disabled={readOnly}
+              onChange={(e) => setWorkDate(e.target.value)}
+            />
+          )}
         </div>
       </div>
 
@@ -1342,28 +1352,38 @@ export default function WpPlanEditor() {
           const selectedEngineers = getSelectedEngineers(group);
           const selectedEmployees = getSelectedEmployees(group);
           const groupTitle = cleanText(group.projectCode) || `مشروع ${index + 1}`;
+          const viewerInGroup = viewerMode && selectedEmployees.some((employee) => employee.id === wpUser?.id);
+          const groupCollapsed = viewerMode ? false : group.collapsed;
+          const groupOpenClass = viewerInGroup
+            ? 'wp-viewer-highlight bg-gradient-to-br from-emerald-50 via-white to-blue-50 border-emerald-300 ring-1 ring-emerald-200 shadow-md'
+            : !groupCollapsed
+              ? 'bg-gradient-to-br from-blue-50 via-white to-cyan-50 border-blue-300 ring-1 ring-blue-100 shadow-md'
+              : '';
           return (
-            <div key={group.id} className={`card p-0 overflow-hidden ${group.collapsed ? '' : 'bg-gradient-to-b from-white via-slate-50/80 to-white border-slate-300'}`}>
+            <div key={group.id} className={`card p-0 overflow-hidden ${groupOpenClass}`}>
               <div className="px-4 py-3 flex items-center justify-between gap-3">
-                <button type="button" className="min-w-0 flex-1 text-right" onClick={() => toggleGroup(group.id)}>
+                <button type="button" className="min-w-0 flex-1 text-right" onClick={() => toggleGroup(group.id)} disabled={viewerMode}>
                   <div className="text-base font-semibold text-gray-900 truncate">{groupTitle}</div>
+                  {viewerInGroup && <div className="mt-1 text-xs font-semibold text-emerald-700">اسمك موجود في هذا المشروع</div>}
                 </button>
-                <div className="flex items-center gap-2">
-                  {!readOnly && groups.length > 1 && (
+                {!viewerMode && (
+                  <div className="flex items-center gap-2">
+                    {!readOnly && groups.length > 1 && (
                     <button type="button" className="btn-ghost text-red-600" onClick={() => removeGroup(group.id)} aria-label="حذف المشروع">
                       <Trash2 className="h-4 w-4" />
                     </button>
-                  )}
-                  <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => toggleGroup(group.id)}>
-                    <span className="text-sm">{group.collapsed ? 'إظهار' : 'إخفاء'}</span>
-                    <ChevronDown className={`h-4 w-4 icon-blue transition-transform ${group.collapsed ? '' : 'rotate-180'}`} />
-                  </button>
-                </div>
+                    )}
+                    <button type="button" className="btn-ghost inline-flex items-center gap-2" onClick={() => toggleGroup(group.id)}>
+                      <span className="text-sm">{groupCollapsed ? 'إظهار' : 'إخفاء'}</span>
+                      <ChevronDown className={`h-4 w-4 icon-blue transition-transform ${groupCollapsed ? '' : 'rotate-180'}`} />
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {!group.collapsed && (
+              {!groupCollapsed && (
                 <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
-                  {renderUnifiedPicker(group, index)}
+                  {!readOnly && renderUnifiedPicker(group, index)}
 
                   <div className="space-y-2">
                     {selectedEngineers.map((engineer) => renderSelectedPerson(group.id, 'engineer', engineer))}
@@ -1392,12 +1412,14 @@ export default function WpPlanEditor() {
       <div className="flex flex-col sm:flex-row justify-end gap-2 pb-8">
         {!readOnly && (
           <>
-            <button type="button" className="btn-ghost disabled:opacity-50" disabled={busy} onClick={() => savePlan('DRAFT')}>
-              {busy ? 'جاري الحفظ...' : 'حفظ مسودة'}
-            </button>
+            {status !== 'SUBMITTED' && (
+              <button type="button" className="btn-ghost disabled:opacity-50" disabled={busy} onClick={() => savePlan('DRAFT')}>
+                {busy ? 'جاري الحفظ...' : 'حفظ مسودة'}
+              </button>
+            )}
             <button type="button" className="btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={() => savePlan('SUBMITTED')}>
               <Send className="h-4 w-4" />
-              <span>{busy ? 'جاري الإرسال...' : 'إرسال'}</span>
+              <span>{busy ? 'جاري الحفظ...' : status === 'SUBMITTED' ? 'حفظ التعديل' : 'إرسال'}</span>
             </button>
           </>
         )}

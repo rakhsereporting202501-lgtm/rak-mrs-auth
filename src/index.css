@@ -63,6 +63,17 @@ textarea.input { @apply h-auto min-h-[6rem]; }
 .wp-sortable-row { position: relative; transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease; }
 .wp-sortable-row.is-dragging { transform: scale(1.025); z-index: 20; }
 .wp-drag-handle { touch-action: none; user-select: none; }
+.wp-viewer-highlight { position: relative; }
+.wp-viewer-highlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.72) 45%, transparent 70%);
+  transform: translateX(-100%);
+  animation: wpViewerShine 2.4s ease-in-out infinite;
+}
 
 /* Hero greeting card */
 .hero-card { @apply rounded-2xl p-6 sm:p-8 bg-gradient-to-br from-blue-700 to-blue-600 text-white shadow-lg ring-1 ring-blue-600/50; }
@@ -102,4 +113,9 @@ textarea.input { @apply h-auto min-h-[6rem]; }
 @keyframes rowShimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
+}
+
+@keyframes wpViewerShine {
+  0% { transform: translateX(-100%); }
+  55%, 100% { transform: translateX(100%); }
 }

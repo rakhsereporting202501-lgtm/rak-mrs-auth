@@ -180,6 +180,7 @@ export default function WpAdmin() {
   const [searchByTab, setSearchByTab] = useState<SearchState>(emptySearch);
   const [coordinatorIncludeSearch, setCoordinatorIncludeSearch] = useState('');
   const [coordinatorExcludeSearch, setCoordinatorExcludeSearch] = useState('');
+  const [overlapDetailsOpen, setOverlapDetailsOpen] = useState(false);
   const [employeeForm, setEmployeeForm] = useState<EmployeeForm>(emptyEmployeeForm);
   const [coordinatorForm, setCoordinatorForm] = useState<CoordinatorForm>(emptyCoordinatorForm);
   const [projectForm, setProjectForm] = useState<WpProject>(emptyProject);
@@ -336,8 +337,8 @@ export default function WpAdmin() {
       city: employee.city || '',
       accountType: employee.accountType || 'VIEWER',
       active: employee.active !== false,
-      authEmail: employee.authEmail || '',
-      authUid: employee.authUid || '',
+      authEmail: '',
+      authUid: '',
       password: '',
     });
     setDialogTab('employees');
@@ -373,16 +374,19 @@ export default function WpAdmin() {
       if (!employeeForm.position || !employeeForm.department || !employeeForm.city) {
         throw new Error(isAr ? 'اختر المنصب والقسم والمدينة.' : 'Choose position, department, and city.');
       }
-      let authUid = employeeForm.authUid;
+      const previousEmployee = employeeById.get(id);
+      const authEmail = cleanWpText(employeeForm.authEmail) || previousEmployee?.authEmail || '';
+      let authUid = cleanWpText(employeeForm.authUid) || previousEmployee?.authUid || '';
       if ((employeeForm.accountType === 'COORDINATOR' || employeeForm.accountType === 'ADMIN') && employeeForm.password) {
-        if (!employeeForm.authEmail) throw new Error(isAr ? 'اكتب بريد تسجيل الدخول.' : 'Enter login email.');
-        authUid = await createPasswordAccount(employeeForm.authEmail, employeeForm.password);
+        if (!authEmail) throw new Error(isAr ? 'اكتب بريد تسجيل الدخول.' : 'Enter login email.');
+        authUid = await createPasswordAccount(authEmail, employeeForm.password);
       }
       const employee = normalizeWpEmployee({
         ...employeeForm,
         id,
         memberCode: employeeForm.memberCode || id,
         fullName,
+        authEmail,
         authUid,
       });
       await setDoc(doc(getWpDb(), WP_EMPLOYEES_COLLECTION, id), {
@@ -837,6 +841,17 @@ export default function WpAdmin() {
     return renderSessions();
   };
 
+  const coordinatorOverlapDetails = (coordinator: WpCoordinatorDoc) => {
+    const selectedDepartments = new Set(coordinatorForm.departmentIds || []);
+    const selectedPeople = new Set([...(coordinatorForm.includeEmployeeIds || []), ...(coordinatorForm.excludeEmployeeIds || [])]);
+    const sharedDepartments = (coordinator.departmentIds || []).filter((department) => selectedDepartments.has(department));
+    const sharedPeople = Array.from(new Set([
+      ...(coordinator.includeEmployeeIds || []),
+      ...(coordinator.excludeEmployeeIds || []),
+    ])).filter((employeeId) => selectedPeople.has(employeeId));
+    return { sharedDepartments, sharedPeople };
+  };
+
   const renderEmployeeForm = () => (
     <form className="space-y-3" onSubmit={saveEmployee}>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -876,11 +891,11 @@ export default function WpAdmin() {
             <option value="ADMIN">ADMIN</option>
           </select>
         </AdminField>
-        <AdminField label={isAr ? 'بريد تسجيل الدخول' : 'Login email'}><input className="input" value={employeeForm.authEmail} onChange={(e) => setEmployeeForm((p) => ({ ...p, authEmail: e.target.value }))} /></AdminField>
+        <AdminField label={isAr ? 'بريد تسجيل الدخول' : 'Login email'}><input className="input" autoComplete="off" value={employeeForm.authEmail} onChange={(e) => setEmployeeForm((p) => ({ ...p, authEmail: e.target.value }))} /></AdminField>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <AdminField label={isAr ? 'كلمة مرور جديدة' : 'New password'}><input className="input" type="password" value={employeeForm.password} onChange={(e) => setEmployeeForm((p) => ({ ...p, password: e.target.value }))} /></AdminField>
-        <AdminField label="Firebase Auth UID"><input className="input bg-gray-50" value={employeeForm.authUid} onChange={(e) => setEmployeeForm((p) => ({ ...p, authUid: e.target.value }))} /></AdminField>
+        <AdminField label={isAr ? 'كلمة مرور جديدة' : 'New password'}><input className="input" type="password" autoComplete="new-password" value={employeeForm.password} onChange={(e) => setEmployeeForm((p) => ({ ...p, password: e.target.value }))} /></AdminField>
+        <AdminField label="Firebase Auth UID"><input className="input bg-gray-50" autoComplete="off" value={employeeForm.authUid} onChange={(e) => setEmployeeForm((p) => ({ ...p, authUid: e.target.value }))} /></AdminField>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={employeeForm.active} onChange={(e) => setEmployeeForm((p) => ({ ...p, active: e.target.checked }))} />
@@ -888,8 +903,8 @@ export default function WpAdmin() {
       </label>
       <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-800">
         {isAr
-          ? 'لجعل الموظف يطلب كلمة مرور عند الدخول: اختر COORDINATOR أو ADMIN، اكتب بريد الدخول وكلمة المرور، ثم احفظ.'
-          : 'To require a password: choose COORDINATOR or ADMIN, enter login email and password, then save.'}
+          ? 'حقول بريد الدخول وكلمة المرور وFirebase UID تفتح فارغة دائماً. اتركها فارغة للحفاظ على بيانات الدخول الحالية، أو اكتب قيماً جديدة للتحديث.'
+          : 'Login email, password, and Firebase UID open blank. Leave them blank to keep current login data, or enter new values to update.'}
       </div>
       <DialogActions
         onDelete={employeeForm.id && employeeForm.accountType !== 'ADMIN' ? () => deleteEmployee(normalizeWpEmployee(employeeForm)) : undefined}
@@ -970,12 +985,25 @@ export default function WpAdmin() {
 
       {selectedCoordinatorOverlaps.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          <div className="font-semibold mb-1">{isAr ? 'تداخل مع منسقين آخرين' : 'Overlap with other coordinators'}</div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="font-semibold">{isAr ? 'تداخل مع منسقين آخرين' : 'Overlap with other coordinators'}</div>
+              <div className="mt-1">{isAr ? 'اضغط لعرض الأقسام أو الأشخاص المتداخلين.' : 'Open to see shared departments or people.'}</div>
+            </div>
+            <button type="button" className="btn-ghost bg-white text-amber-800" onClick={() => setOverlapDetailsOpen(true)}>
+              {isAr ? 'عرض التفاصيل' : 'View details'}
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
             {selectedCoordinatorOverlaps.map((coordinator) => (
-              <span key={coordinator.id} className="rounded-xl border border-amber-200 bg-white px-2 py-1">
+              <button
+                key={coordinator.id}
+                type="button"
+                className="rounded-xl border border-amber-200 bg-white px-2 py-1 hover:bg-amber-100"
+                onClick={() => setOverlapDetailsOpen(true)}
+              >
                 {employeeLabel(coordinator.employeeId)}
-              </span>
+              </button>
             ))}
           </div>
         </div>
@@ -1140,7 +1168,30 @@ export default function WpAdmin() {
       {message && <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">{message}</div>}
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="sticky top-0 z-20 -mx-1 overflow-x-auto bg-white/95 px-1 py-2 backdrop-blur md:hidden">
+        <div className="flex gap-2">
+          {sections.map(({ key, labelAr, labelEn, count, Icon }) => {
+            const active = tab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm ${active ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-700'}`}
+                onClick={() => {
+                  setTab(key);
+                  resetMessages();
+                }}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{isAr ? labelAr : labelEn}</span>
+                <span className="rounded-lg bg-gray-100 px-1.5 text-xs text-gray-600">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-4">
         {sections.map(({ key, labelAr, labelEn, helperAr, helperEn, count, Icon }) => {
           const active = tab === key;
           return (
@@ -1219,6 +1270,62 @@ export default function WpAdmin() {
             </div>
             <div className="max-h-[calc(92vh-86px)] overflow-y-auto p-4">
               {renderDialogForm()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {overlapDetailsOpen && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/35 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+          <div className="max-h-[92vh] w-full overflow-hidden rounded-t-3xl border border-amber-200 bg-white shadow-xl sm:max-w-4xl sm:rounded-3xl">
+            <div className="flex items-start justify-between gap-3 border-b border-amber-100 bg-amber-50 p-4">
+              <div>
+                <div className="text-lg font-semibold text-amber-900">{isAr ? 'تفاصيل التداخل' : 'Overlap details'}</div>
+                <div className="mt-1 text-sm text-amber-800">
+                  {isAr ? `المنسق الحالي: ${employeeLabel(coordinatorForm.employeeId)}` : `Current coordinator: ${employeeLabel(coordinatorForm.employeeId)}`}
+                </div>
+              </div>
+              <button type="button" className="btn-ghost bg-white" onClick={() => setOverlapDetailsOpen(false)} aria-label={isAr ? 'إغلاق' : 'Close'}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[calc(92vh-86px)] space-y-3 overflow-y-auto p-4">
+              {selectedCoordinatorOverlaps.map((coordinator) => {
+                const details = coordinatorOverlapDetails(coordinator);
+                return (
+                  <div key={coordinator.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-gray-900">{employeeLabel(coordinator.employeeId)}</div>
+                        <div className="mt-1 text-xs text-gray-500">{isAr ? 'منسق آخر لديه صلاحية متقاطعة' : 'Another coordinator with shared access'}</div>
+                      </div>
+                      <span className={`badge ${coordinator.active === false ? 'border-gray-200 bg-gray-50 text-gray-600' : 'border-green-200 bg-green-50 text-green-700'}`}>
+                        {coordinator.active === false ? (isAr ? 'غير فعال' : 'Inactive') : (isAr ? 'فعال' : 'Active')}
+                      </span>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                        <div className="text-xs font-semibold text-blue-800">{isAr ? 'الأقسام المشتركة' : 'Shared departments'}</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {details.sharedDepartments.map((department) => (
+                            <span key={department} className="rounded-xl border border-blue-200 bg-white px-2 py-1 text-xs text-blue-800">{department}</span>
+                          ))}
+                          {!details.sharedDepartments.length && <span className="text-xs text-blue-700">{isAr ? 'لا يوجد قسم مشترك.' : 'No shared department.'}</span>}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                        <div className="text-xs font-semibold text-emerald-800">{isAr ? 'الأشخاص المشتركون' : 'Shared people'}</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {details.sharedPeople.map((employeeId) => (
+                            <span key={employeeId} className="rounded-xl border border-emerald-200 bg-white px-2 py-1 text-xs text-emerald-800">{employeeLabel(employeeId)}</span>
+                          ))}
+                          {!details.sharedPeople.length && <span className="text-xs text-emerald-700">{isAr ? 'لا يوجد شخص مشترك.' : 'No shared person.'}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

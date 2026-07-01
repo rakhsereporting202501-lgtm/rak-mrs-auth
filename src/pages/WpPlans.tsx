@@ -21,6 +21,39 @@ function statusLabel(status?: string) {
   return status || '-';
 }
 
+function displayPlanPersonName(value?: string) {
+  const clean = String(value || '').trim().replace(/\s+/g, ' ');
+  const arabicParts = clean.match(/[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+)*/g);
+  return arabicParts?.join(' ').trim() || clean;
+}
+
+function formatPlanMessage(plan: WpPlanDoc) {
+  const lines = [
+    `تاريخ العمل: ${plan.workDate || '-'}`,
+    '',
+  ];
+  (plan.groups || []).forEach((group, index) => {
+    const projectName = group.projectCode || group.projectName || `مشروع ${index + 1}`;
+    const engineers = (group.engineerSnapshots || [])
+      .map((engineer) => displayPlanPersonName(engineer.fullName))
+      .filter(Boolean);
+    const engineerNames = engineers.length
+      ? engineers
+      : (Array.isArray(group.engineerNames) ? group.engineerNames.map(displayPlanPersonName).filter(Boolean) : []);
+    const employees = (group.employeeSnapshots || [])
+      .map((employee) => displayPlanPersonName(employee.fullName))
+      .filter(Boolean);
+    lines.push(projectName);
+    lines.push(`المهندس: ${engineerNames.join(' / ') || '-'}`);
+    lines.push('فريق العمل:');
+    if (employees.length) employees.forEach((name) => lines.push(`- ${name}`));
+    else lines.push('-');
+    if (index < (plan.groups || []).length - 1) lines.push('----------------');
+    lines.push('');
+  });
+  return lines.join('\n').trim();
+}
+
 function planSearchText(plan: WpPlanDoc) {
   const groupText = (plan.groups || []).map((group) => [
     group.projectCode,
@@ -72,10 +105,12 @@ export default function WpPlans() {
   ));
   const [dateFilter, setDateFilter] = useState(() => typeof savedFilters.dateFilter === 'string' ? savedFilters.dateFilter : '');
   const [sortKey, setSortKey] = useState<'updatedAt' | 'workDate' | 'planCode' | 'groups' | 'employees'>(() => (
-    ['updatedAt', 'workDate', 'planCode', 'groups', 'employees'].includes(savedFilters.sortKey) ? savedFilters.sortKey : 'updatedAt'
+    ['updatedAt', 'workDate', 'planCode', 'groups', 'employees'].includes(savedFilters.sortKey) ? savedFilters.sortKey : 'workDate'
   ));
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => savedFilters.sortDir === 'asc' ? 'asc' : 'desc');
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
+  const [messagePlan, setMessagePlan] = useState<WpPlanDoc | null>(null);
+  const [copiedMessage, setCopiedMessage] = useState(false);
 
   useEffect(() => {
     try {
@@ -100,7 +135,7 @@ export default function WpPlans() {
         : query(base, where('status', '==', 'SUBMITTED'), limit(150));
     const unsub = onSnapshot(q, (snap) => {
       const next = snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) } as WpPlanDoc));
-      next.sort((a, b) => timestampMs(b.updatedAt || b.createdAt) - timestampMs(a.updatedAt || a.createdAt));
+      next.sort((a, b) => (b.workDate || '').localeCompare(a.workDate || '') || timestampMs(b.updatedAt || b.createdAt) - timestampMs(a.updatedAt || a.createdAt));
       setPlans(next);
       setError(null);
       setLoading(false);
@@ -153,13 +188,13 @@ export default function WpPlans() {
     return out;
   }, [plans, qText, statusFilter, dateFilter, sortKey, sortDir, isAdmin, canManagePlans, wpUser?.id, wpUser?.department, coordinators]);
 
-  const hasFilters = !!qText || statusFilter !== 'ALL' || !!dateFilter || sortKey !== 'updatedAt' || sortDir !== 'desc';
+  const hasFilters = !!qText || statusFilter !== 'ALL' || !!dateFilter || sortKey !== 'workDate' || sortDir !== 'desc';
 
   const clearFilters = () => {
     setQText('');
     setStatusFilter('ALL');
     setDateFilter('');
-    setSortKey('updatedAt');
+    setSortKey('workDate');
     setSortDir('desc');
   };
 
@@ -269,6 +304,7 @@ export default function WpPlans() {
                   <div className="mt-2 text-sm text-gray-600">
                     {countLabel(groupCount, 'مشروع')} - {countLabel(employeeCount, 'فريق العمل')}
                   </div>
+                  <div className="mt-1 text-sm font-medium text-blue-700">تاريخ العمل: {plan.workDate || '-'}</div>
                 </div>
                 <div className="flex gap-1 shrink-0">
                   {canManagePlans && plan.status === 'DRAFT' && (isAdmin || plan.createdByUid === wpUser?.id) && (
@@ -298,6 +334,20 @@ export default function WpPlans() {
                       <Copy className="h-4 w-4 icon-blue" />
                     </button>
                   )}
+                  {canManagePlans && submitted && (
+                    <button
+                      type="button"
+                      className="btn-ghost inline-flex items-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMessagePlan(plan);
+                        setCopiedMessage(false);
+                      }}
+                      aria-label="رسالة الخطة"
+                    >
+                      <ClipboardList className="h-4 w-4 icon-blue" />
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="mt-auto flex justify-end pt-3">
@@ -307,6 +357,39 @@ export default function WpPlans() {
           );
         })}
       </div>
+
+      {messagePlan && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+          <div className="max-h-[92vh] w-full overflow-hidden rounded-t-3xl border border-gray-200 bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-100 p-4">
+              <div>
+                <div className="text-lg font-semibold">رسالة خطة العمل</div>
+                <div className="mt-1 text-sm text-gray-500">{messagePlan.planCode || messagePlan.id}</div>
+              </div>
+              <button type="button" className="btn-ghost" onClick={() => setMessagePlan(null)} aria-label="إغلاق">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[calc(92vh-86px)] space-y-3 overflow-y-auto p-4">
+              <pre className="max-h-[60vh] whitespace-pre-wrap rounded-2xl border border-gray-200 bg-gray-50 p-4 text-right text-sm leading-7 text-gray-900">{formatPlanMessage(messagePlan)}</pre>
+              <div className="flex justify-end gap-2">
+                <button type="button" className="btn-ghost" onClick={() => setMessagePlan(null)}>إغلاق</button>
+                <button
+                  type="button"
+                  className="btn-primary inline-flex items-center gap-2"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(formatPlanMessage(messagePlan));
+                    setCopiedMessage(true);
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                  <span>{copiedMessage ? 'تم النسخ' : 'نسخ'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
